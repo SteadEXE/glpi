@@ -106,12 +106,12 @@ if (isset($_POST["add"])) {
     if (in_array($item_device->getType(), $CFG_GLPI['devices_in_menu'])) {
         $menus = ["assets", strtolower($item_device->getType())];
     } else {
-        $menus = ["config", "commondevice", $item_device->getDeviceType()];
+        $menus = ["config", "commondevice", $item_device->getType()];
     }
 
     if (!isset($options)) {
         $options = [];
     }
 
-    Item_Devices::displayFullPageForItem($_GET["id"], $menus, $options ?? []);
+    $item_device::displayFullPageForItem($_GET["id"], $menus, $options ?? []);
 }

@@ -6,7 +6,7 @@
     "license": "GPL-2.0",
     "engines": {
         "node": ">= 16.0",
-        "npm": ">= 8.0"
+        "npm": ">= 7.0"
     },
     "dependencies": {
         "@eastdesire/jscolor": "^2.4.6",
@@ -62,7 +62,7 @@
         "select2": "^4.0.13",
         "spin.js": "^4.1.0",
         "tinymce": "^5.7.0",
-        "tinymce-i18n": "^20.4.4"
+        "tinymce-i18n": "^22.2.11"
     },
     "scripts": {
         "build:pack": "webpack --config webpack.config.js",
@@ -82,7 +82,7 @@
         "eslint": "^8.1.0",
         "glob": "^7.1.6",
         "jest": "^27.3.0",
-        "jest-extended": "^1.1.0",
+        "jest-extended": "^2.0.0",
         "mini-css-extract-plugin": "^2.0.0",
         "script-loader": "^0.7.2",
         "strip-sourcemap-loader": "^0.0.1",

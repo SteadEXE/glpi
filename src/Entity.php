@@ -96,6 +96,7 @@ class Entity extends CommonTreeDropdown
         'notification' => [
             'admin_email', 'replyto_email', 'from_email',
             'admin_email_name', 'replyto_email_name', 'from_email_name',
+            'noreply_email_name','noreply_email',
             'delay_send_emails',
             'is_notif_enable_default',
             'default_cartridges_alarm_threshold',
@@ -1813,16 +1814,16 @@ class Entity extends CommonTreeDropdown
         echo "<td>";
 
         $toadd = [self::CONFIG_NEVER => __('No change of entity')]; // Keep software in PC entity
+        $entities = [];
         if ($ID > 0) {
             $toadd[self::CONFIG_PARENT] = __('Inheritance of the parent entity');
-        }
-        $entities = [$entity->fields['entities_id']];
-        foreach (getAncestorsOf('glpi_entities', $entity->fields['entities_id']) as $ent) {
-            if (Session::haveAccessToEntity($ent)) {
-                $entities[] = $ent;
+            $entities = [$entity->fields['entities_id']];
+            foreach (getAncestorsOf('glpi_entities', $entity->fields['entities_id']) as $ent) {
+                if (Session::haveAccessToEntity($ent)) {
+                    $entities[] = $ent;
+                }
             }
         }
-
         self::dropdown(['name'     => 'entities_id_software',
             'value'    => $entity->fields['entities_id_software'],
             'toadd'    => $toadd,
