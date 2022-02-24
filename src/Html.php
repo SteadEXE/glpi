@@ -769,7 +769,7 @@ class Html
                 echo "took  " . array_sum($DEBUG_SQL['times']) . "s</h1>";
 
                 echo "<table class='sql-debug table table-striped'><tr><th>N&#176; </th><th>Queries</th><th>Time</th>";
-                echo "<th>Rows</th><th>Errors</th></tr>";
+                echo "<th>Rows</th><th>Errors</th><th>SQL warnings</th></tr>";
 
                 foreach ($DEBUG_SQL['queries'] as $num => $query) {
                     echo "<tr><td>$num</td><td>";
@@ -781,6 +781,14 @@ class Html
                     echo "</td><td>";
                     if (isset($DEBUG_SQL['errors'][$num])) {
                         echo $DEBUG_SQL['errors'][$num];
+                    } else {
+                        echo "&nbsp;";
+                    }
+                    echo "</td><td>";
+                    if (isset($DEBUG_SQL['warnings'][$num])) {
+                        foreach ($DEBUG_SQL['warnings'][$num] as $warning) {
+                            echo sprintf('%s: %s', $warning['Code'], $warning['Message']) . '<br />';
+                        }
                     } else {
                         echo "&nbsp;";
                     }
@@ -1570,6 +1578,102 @@ HTML;
     }
 
     /**
+     * Generate menu array for simplified interface (helpdesk)
+     *
+     * @since  10
+     *
+     * @return array
+     */
+    public static function generateHelpMenu()
+    {
+        global $PLUGIN_HOOKS;
+
+        $menu = [
+            'home' => [
+                'default' => '/front/helpdesk.public.php',
+                'title'   => __('Home'),
+                'icon'    => 'fas fa-home',
+            ],
+        ];
+
+        if (Session::haveRight("ticket", CREATE)) {
+            $menu['create_ticket'] = [
+                'default' => '/front/helpdesk.public.php?create_ticket=1',
+                'title'   => __('Create a ticket'),
+                'icon'    => 'ti ti-plus',
+            ];
+        }
+
+        if (
+            Session::haveRight("ticket", CREATE)
+            || Session::haveRight("ticket", Ticket::READMY)
+            || Session::haveRight("followup", ITILFollowup::SEEPUBLIC)
+        ) {
+            $menu['tickets'] = [
+                'default' => '/front/ticket.php',
+                'title'   => _n('Ticket', 'Tickets', Session::getPluralNumber()),
+                'icon'    => Ticket::getIcon(),
+                'content' => [
+                    'ticket' => [
+                        'links' => [
+                            'add'       => '/front/helpdesk.public.php?create_ticket=1',
+                            'search'    => Ticket::getSearchURL(),
+                            'lists'     => '',
+                        ]
+                    ]
+                ]
+            ];
+        }
+
+        if (Session::haveRight("reservation", ReservationItem::RESERVEANITEM)) {
+            $menu['reservation'] = [
+                'default' => '/front/reservationitem.php',
+                'title'   => _n('Reservation', 'Reservations', Session::getPluralNumber()),
+                'icon'    => ReservationItem::getIcon(),
+            ];
+        }
+
+        if (Session::haveRight('knowbase', KnowbaseItem::READFAQ)) {
+            $menu['faq'] = [
+                'default' => '/front/helpdesk.faq.php',
+                'title'   => __('FAQ'),
+                'icon'    => KnowbaseItem::getIcon(),
+            ];
+        }
+
+        if (
+            isset($PLUGIN_HOOKS["helpdesk_menu_entry"])
+            && count($PLUGIN_HOOKS["helpdesk_menu_entry"])
+        ) {
+            $menu['plugins'] = [
+                'title' => __("Plugins"),
+                'icon'  => Plugin::getIcon(),
+            ];
+
+            foreach ($PLUGIN_HOOKS["helpdesk_menu_entry"] as $plugin => $active) {
+                if (!Plugin::isPluginActive($plugin)) {
+                    continue;
+                }
+                if ($active) {
+                    $infos = Plugin::getInfo($plugin);
+                    $link = "";
+                    if (is_string($PLUGIN_HOOKS["helpdesk_menu_entry"][$plugin])) {
+                        $link = $PLUGIN_HOOKS["helpdesk_menu_entry"][$plugin];
+                    }
+                    $infos['page'] = $link;
+                    $infos['title'] = $infos['name'];
+                    if (isset($PLUGIN_HOOKS["helpdesk_menu_entry_icon"][$plugin])) {
+                        $infos['icon'] = $PLUGIN_HOOKS["helpdesk_menu_entry_icon"][$plugin];
+                    }
+                    $menu['plugins']['content'][$plugin] = $infos;
+                }
+            }
+        }
+
+        return $menu;
+    }
+
+    /**
      * Returns menu sector corresponding to given itemtype.
      *
      * @param string $itemtype
@@ -1682,6 +1786,20 @@ HTML;
 
         echo self::getCoreVariablesForJavascript(true);
 
+        if (isset($CFG_GLPI['notifications_ajax']) && $CFG_GLPI['notifications_ajax'] && !Session::isImpersonateActive()) {
+            $options = [
+                'interval'  => ($CFG_GLPI['notifications_ajax_check_interval'] ? $CFG_GLPI['notifications_ajax_check_interval'] : 5) * 1000,
+                'sound'     => $CFG_GLPI['notifications_ajax_sound'] ? $CFG_GLPI['notifications_ajax_sound'] : false,
+                'icon'      => ($CFG_GLPI["notifications_ajax_icon_url"] ? $CFG_GLPI['root_doc'] . $CFG_GLPI['notifications_ajax_icon_url'] : false),
+                'user_id'   => Session::getLoginUserID()
+            ];
+            $js = "$(function() {
+            notifications_ajax = new GLPINotificationsAjax(" . json_encode($options) . ");
+            notifications_ajax.start();
+         });";
+            echo Html::scriptBlock($js);
+        }
+
         $tpl_vars = [
             'js_files' => [],
         ];
@@ -1712,7 +1830,6 @@ HTML;
         $tpl_vars['js_files'][] = 'js/common.js';
         $tpl_vars['js_files'][] = 'js/misc.js';
 
-       // TODO Add Ajax notifications script block
         if (isset($PLUGIN_HOOKS['add_javascript']) && count($PLUGIN_HOOKS['add_javascript'])) {
             foreach ($PLUGIN_HOOKS["add_javascript"] as $plugin => $files) {
                 if (!Plugin::isPluginActive($plugin)) {
@@ -1852,7 +1969,7 @@ HTML;
         string $option = "",
         bool $add_id = true
     ) {
-        global $HEADER_LOADED, $PLUGIN_HOOKS;
+        global $HEADER_LOADED;
 
         // Print a nice HTML-head for help page
         if ($HEADER_LOADED) {
@@ -1862,88 +1979,7 @@ HTML;
 
         self::includeHeader($title, $sector, $item, $option, $add_id);
 
-        $menu = [
-            'home' => [
-                'default' => '/front/helpdesk.public.php',
-                'title'   => __('Home'),
-                'icon'    => 'fas fa-home',
-            ],
-        ];
-
-        if (Session::haveRight("ticket", CREATE)) {
-            $menu['create_ticket'] = [
-                'default' => '/front/helpdesk.public.php?create_ticket=1',
-                'title'   => __('Create a ticket'),
-                'icon'    => 'ti ti-plus',
-            ];
-        }
-
-        if (
-            Session::haveRight("ticket", CREATE)
-            || Session::haveRight("ticket", Ticket::READMY)
-            || Session::haveRight("followup", ITILFollowup::SEEPUBLIC)
-        ) {
-            $menu['tickets'] = [
-                'default' => '/front/ticket.php',
-                'title'   => _n('Ticket', 'Tickets', Session::getPluralNumber()),
-                'icon'    => Ticket::getIcon(),
-                'content' => [
-                    'ticket' => [
-                        'links' => [
-                            'add'       => '/front/helpdesk.public.php?create_ticket=1',
-                            'search'    => Ticket::getSearchURL(),
-                            'lists'     => '',
-                        ]
-                    ]
-                ]
-            ];
-        }
-
-        if (Session::haveRight("reservation", ReservationItem::RESERVEANITEM)) {
-            $menu['reservation'] = [
-                'default' => '/front/reservationitem.php',
-                'title'   => _n('Reservation', 'Reservations', Session::getPluralNumber()),
-                'icon'    => ReservationItem::getIcon(),
-            ];
-        }
-
-        if (Session::haveRight('knowbase', KnowbaseItem::READFAQ)) {
-            $menu['faq'] = [
-                'default' => '/front/helpdesk.faq.php',
-                'title'   => __('FAQ'),
-                'icon'    => KnowbaseItem::getIcon(),
-            ];
-        }
-
-        if (
-            isset($PLUGIN_HOOKS["helpdesk_menu_entry"])
-            && count($PLUGIN_HOOKS["helpdesk_menu_entry"])
-        ) {
-            $menu['plugins'] = [
-                'title' => __("Plugins"),
-                'icon'  => Plugin::getIcon(),
-            ];
-
-            foreach ($PLUGIN_HOOKS["helpdesk_menu_entry"] as $plugin => $active) {
-                if (!Plugin::isPluginActive($plugin)) {
-                    continue;
-                }
-                if ($active) {
-                    $infos = Plugin::getInfo($plugin);
-                    $link = "";
-                    if (is_string($PLUGIN_HOOKS["helpdesk_menu_entry"][$plugin])) {
-                        $link = $PLUGIN_HOOKS["helpdesk_menu_entry"][$plugin];
-                    }
-                    $infos['page'] = $link;
-                    $infos['title'] = $infos['name'];
-                    if (isset($PLUGIN_HOOKS["helpdesk_menu_entry_icon"][$plugin])) {
-                        $infos['icon'] = $PLUGIN_HOOKS["helpdesk_menu_entry_icon"][$plugin];
-                    }
-                    $menu['plugins']['content'][$plugin] = $infos;
-                }
-            }
-        }
-
+        $menu = self::generateHelpMenu();
         $menu = Plugin::doHookFunction("redefine_menus", $menu);
 
         $tmp_active_item = explode("/", $item);
@@ -2751,7 +2787,7 @@ HTML;
          : "";
         $clear_btn = $p['clear_btn'] && $p['maybeempty'] && $p['canedit']
          ? "<a data-clear  title='" . __s('Clear') . "'>
-               <i class='input-group-text fa fa-times-circle pointer'></i>
+               <i class='input-group-text fas fa-times-circle pointer'></i>
             </a>"
          : "";
 
@@ -2944,7 +2980,7 @@ JS;
          ? " disabled='disabled'"
          : "";
         $clear    = $p['maybeempty'] && $p['canedit']
-         ? "<i class='input-group-text fa fa-times-circle fa-lg pointer' data-clear role='button' title='" . __s('Clear') . "'></i>"
+         ? "<i class='input-group-text fas fa-times-circle fa-lg pointer' data-clear role='button' title='" . __s('Clear') . "'></i>"
          : "";
 
         $output = <<<HTML
@@ -3076,7 +3112,7 @@ JS;
          : "";
         $clear    = $p['maybeempty'] && $p['canedit']
          ? "<a data-clear  title='" . __s('Clear') . "'>
-               <i class='input-group-text fa fa-times-circle pointer'></i>
+               <i class='input-group-text fas fa-times-circle pointer'></i>
             </a>"
          : "";
 
@@ -5723,7 +5759,7 @@ JAVASCRIPT
                 $textTag = $tag['tag'];
                 $domItems = "{0:'" . $upload['id'] . "', 1:'" . $upload['id'] . "'+'2'}";
                 $deleteUpload = "deleteImagePasted($domItems, '$textTag', $getEditor)";
-                $display .= '<span class="fa fa-times-circle pointer" onclick="' . $deleteUpload . '"></span>';
+                $display .= '<span class="fas fa-times-circle pointer" onclick="' . $deleteUpload . '"></span>';
 
                 $display .= "</p>";
             }
@@ -6692,12 +6728,10 @@ HTML;
         $fckey = 'css_raw_file_' . $file;
         $file_hash = self::getScssFileHash($path);
 
-       //check if files has changed
-        if (!isset($args['nocache']) && $GLPI_CACHE->has($fckey)) {
-            if ($file_hash != $GLPI_CACHE->get($fckey)) {
-               //file has changed
-                $args['reload'] = true;
-            }
+        //check if files has changed
+        if (!isset($args['nocache']) && $file_hash != $GLPI_CACHE->get($fckey)) {
+            //file has changed
+            $args['reload'] = true;
         }
 
        // Enable imports of ".scss" files from "css/lib", when path starts with "~".
@@ -6722,40 +6756,43 @@ HTML;
             }
         );
 
-        $css = '';
-        if (!isset($args['reload']) && !isset($args['nocache']) && $GLPI_CACHE->has($ckey)) {
+        if (!isset($args['reload']) && !isset($args['nocache'])) {
             $css = $GLPI_CACHE->get($ckey);
-        } else {
-            try {
-                Toolbox::logDebug("Compile $file");
-                $result = $scss->compileString($import, dirname($path));
-                $css = $result->getCss();
-                if (!isset($args['nocache'])) {
-                    $GLPI_CACHE->set($ckey, $css);
-                    $GLPI_CACHE->set($fckey, $file_hash);
-                }
-            } catch (\Throwable $e) {
-                ErrorHandler::getInstance()->handleException($e, true);
-                if (isset($args['debug'])) {
-                    $msg = 'An error occured during SCSS compilation: ' . $e->getMessage();
-                    $msg = str_replace(["\n", "\"", "'"], ['\00000a', '\0022', '\0027'], $msg);
-                    $css = <<<CSS
-                  html::before {
-                     background: #F33;
-                     content: '$msg';
-                     display: block;
-                     padding: 20px;
-                     position: sticky;
-                     top: 0;
-                     white-space: pre-wrap;
-                     z-index: 9999;
-                  }
+            if ($css !== null) {
+                return $css;
+            }
+        }
+
+        $css = '';
+        try {
+            Toolbox::logDebug("Compile $file");
+            $result = $scss->compileString($import, dirname($path));
+            $css = $result->getCss();
+            if (!isset($args['nocache'])) {
+                $GLPI_CACHE->set($ckey, $css);
+                $GLPI_CACHE->set($fckey, $file_hash);
+            }
+        } catch (\Throwable $e) {
+            ErrorHandler::getInstance()->handleException($e, true);
+            if (isset($args['debug'])) {
+                $msg = 'An error occured during SCSS compilation: ' . $e->getMessage();
+                $msg = str_replace(["\n", "\"", "'"], ['\00000a', '\0022', '\0027'], $msg);
+                $css = <<<CSS
+              html::before {
+                 background: #F33;
+                 content: '$msg';
+                 display: block;
+                 padding: 20px;
+                 position: sticky;
+                 top: 0;
+                 white-space: pre-wrap;
+                 z-index: 9999;
+              }
 CSS;
-                }
-                global $application;
-                if ($application instanceof Application) {
-                    throw $e;
-                }
+            }
+            global $application;
+            if ($application instanceof Application) {
+                throw $e;
             }
         }
 

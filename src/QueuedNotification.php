@@ -69,6 +69,16 @@ class QueuedNotification extends CommonDBTM
         return $forbidden;
     }
 
+    public function getForbiddenSingleMassiveActions()
+    {
+        $forbidden = parent::getForbiddenSingleMassiveActions();
+
+        if ($this->fields['mode'] === Notification_NotificationTemplate::MODE_AJAX) {
+            $forbidden[] = __CLASS__ . MassiveAction::CLASS_ACTION_SEPARATOR . 'send';
+        }
+
+        return $forbidden;
+    }
 
     /**
      * @see CommonDBTM::getSpecificMassiveActions()
@@ -80,7 +90,7 @@ class QueuedNotification extends CommonDBTM
         $actions = parent::getSpecificMassiveActions($checkitem);
 
         if ($isadmin && !$is_deleted) {
-            $actions[__CLASS__ . MassiveAction::CLASS_ACTION_SEPARATOR . 'sendmail'] = _x('button', 'Send');
+            $actions[__CLASS__ . MassiveAction::CLASS_ACTION_SEPARATOR . 'send'] = _x('button', 'Send');
         }
 
         return $actions;
@@ -96,10 +106,12 @@ class QueuedNotification extends CommonDBTM
         array $ids
     ) {
         switch ($ma->getAction()) {
-            case 'sendmail':
+            case 'send':
                 foreach ($ids as $id) {
                     if ($item->canEdit($id)) {
-                        if ($item->sendById($id)) {
+                        if ($item->fields['mode'] === Notification_NotificationTemplate::MODE_AJAX) {
+                            $ma->itemDone($item->getType(), $id, MassiveAction::NO_ACTION);
+                        } elseif ($item->sendById($id)) {
                             $ma->itemDone($item->getType(), $id, MassiveAction::ACTION_OK);
                         } else {
                             $ma->itemDone($item->getType(), $id, MassiveAction::ACTION_KO);
@@ -772,7 +784,7 @@ class QueuedNotification extends CommonDBTM
 
         echo "<tr class='tab_bg_1 top' >";
         echo "<td colspan='2' class='queuemail_preview'>";
-        echo self::cleanHtml(Sanitizer::unsanitize($this->fields['body_html']));
+        echo self::cleanHtml(Sanitizer::unsanitize($this->fields['body_html'] ?? ''));
         echo "</td>";
         echo "<td colspan='2'>" . nl2br($this->fields['body_text'], false) . "</td>";
         echo "</tr>";

@@ -821,25 +821,19 @@ HTML;
            __("Or share the dashboard to these target objects:") .
            "</label><br>";
 
-        $values = [];
-        $raw_values = [
+        $values = [
             'profiles_id' => self::$all_dashboards[$this->current]['rights']['profiles_id'] ?? [],
             'entities_id' => self::$all_dashboards[$this->current]['rights']['entities_id'] ?? [],
             'users_id'    => self::$all_dashboards[$this->current]['rights']['users_id'] ?? [],
             'groups_id'   => self::$all_dashboards[$this->current]['rights']['groups_id'] ?? [],
         ];
 
-        foreach ($raw_values as $fkey => $ids) {
-            foreach ($ids as $id) {
-                $values[] = $fkey . "-" . $id;
-            }
-        }
         echo ShareDashboardDropdown::show($rand, $values);
         echo "<br>";
 
         echo "<div class='d-flex align-items-center my-3'>";
         echo __('Personal') . "&nbsp;";
-        echo Html::showToolTip(__("A personal dashboard is not visible by other administrators unless you share explicitely the dashboard")) . "&nbsp";
+        echo Html::showToolTip(__("A personal dashboard is not visible by other administrators unless you explicitly share the dashboard")) . "&nbsp";
         echo Dropdown::showYesNo(
             'is_private',
             (self::$all_dashboards[$this->current]['users_id'] == '0' ? '0' : '1'),
@@ -916,12 +910,10 @@ HTML;
                 header('Expires: ' . gmdate('D, d M Y H:i:s \G\M\T', time() + $cache_age));
             }
 
-           // server cache
-            if ($GLPI_CACHE->has($cache_key)) {
-                $dashboard_cards = $GLPI_CACHE->get($cache_key);
-                if (isset($dashboard_cards[$gridstack_id])) {
-                    return (string) $dashboard_cards[$gridstack_id];
-                }
+            // server cache
+            $dashboard_cards = $GLPI_CACHE->get($cache_key, []);
+            if (isset($dashboard_cards[$gridstack_id])) {
+                return (string) $dashboard_cards[$gridstack_id];
             }
         }
 
@@ -981,7 +973,7 @@ HTML;
 
        // store server cache
         if (strlen($dashboard)) {
-            $dashboard_cards = $GLPI_CACHE->get($cache_key) ?? [];
+            $dashboard_cards = $GLPI_CACHE->get($cache_key, []);
             $dashboard_cards[$gridstack_id] = $html;
             $GLPI_CACHE->set($cache_key, $dashboard_cards, new \DateInterval("PT" . $cache_age . "S"));
         }

@@ -179,7 +179,7 @@ var filesToCopy = [
     // SCSS files
     {
         package: '@tabler/core',
-        from: 'src/scss/**/*.scss',
+        from: '{dist/fonts/*.woff2,src/scss/**/*.scss}',
         to: scssOutputPath,
     },
     {

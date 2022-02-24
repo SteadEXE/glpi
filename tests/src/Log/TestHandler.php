@@ -1,3 +1,5 @@
+<?php
+
 /**
  * ---------------------------------------------------------------------
  * GLPI - Gestionnaire Libre de Parc Informatique
@@ -29,45 +31,27 @@
  * ---------------------------------------------------------------------
  */
 
-#tree_browse {
-    display: flex;
-    align-items: stretch;
+namespace Glpi\Tests\Log;
 
-    .browser_tree {
-        flex-basis: 250px;
-        flex-shrink: 0;
-        padding-right: 10px;
-        padding-left: 2px;
+use Monolog\Handler\TestHandler as BaseTestHandler;
+use Monolog\Logger;
 
-        .browser-tree-container {
-            overflow-x: hidden;
-            overflow-y: auto;
-            flex: 1;
-
-            .fancytree-container {
-                overflow-y: auto;
-
-                i.fa.sub_items {
-                    color: #787878;
-                }
+class TestHandler extends BaseTestHandler
+{
+    public function dropFromRecords(string $message, int $level): void
+    {
+        foreach ($this->records as $index => $record) {
+            if (Logger::toMonologLevel($record['level']) === $level && $record['message'] === $message) {
+                unset($this->records[$index]);
+                break;
             }
         }
 
-        .browser_tree_search {
-            width: 100%;
-            margin-bottom: 5px;
-            padding: 10px 5px;
-            border-radius: 0;
-            box-sizing: border-box;
-        }
-    }
-
-    .browser_items {
-        width: 100%;
-        margin-left: 5px;
-
-        .tab_cadre_pager {
-            width: 100%;
+        foreach ($this->recordsByLevel[$level] as $index => $record) {
+            if ($record['message'] === $message) {
+                unset($this->recordsByLevel[$level][$index]);
+                break;
+            }
         }
     }
 }

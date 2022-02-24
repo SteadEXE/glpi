@@ -38,10 +38,6 @@ jobs:
       PHP_IMAGE: "githubactions-php:${{ matrix.php-version }}"
       UPDATE_FILES_ACL: true
     steps:
-      - name: "Cancel previous runs"
-        uses: "styfle/cancel-workflow-action@0.5.0"
-        with:
-          access_token: "${{ github.token }}"
       - name: "Clean workspace"
         run: |
           echo "APP_CONTAINER_HOME=${{ runner.temp }}/app_home" >> $GITHUB_ENV
@@ -107,11 +103,11 @@ jobs:
       matrix:
         include:
           # test higher PHP version with higher MariaDB and MySQL versions
-          - {php-version: "8.1", db-image: "mariadb:10.6", always: true}
+          - {php-version: "8.1", db-image: "mariadb:10.7", always: true}
           - {php-version: "8.1", db-image: "mysql:8.0", always: true}
           # test other PHP versions
-          - {php-version: "8.0", db-image: "mariadb:10.6", always: false}
-          - {php-version: "7.4", db-image: "mariadb:10.6", always: false}
+          - {php-version: "8.0", db-image: "mariadb:10.7", always: false}
+          - {php-version: "7.4", db-image: "mariadb:10.7", always: false}
           # test other DB servers/versions
           - {php-version: "8.1", db-image: "mariadb:10.2", always: false}
           - {php-version: "8.1", db-image: "mysql:5.7", always: false}
@@ -127,11 +123,6 @@ jobs:
       PHP_IMAGE: "githubactions-php:${{ matrix.php-version }}"
       UPDATE_FILES_ACL: true
     steps:
-      - name: "Cancel previous runs"
-        if: env.skip != 'true'
-        uses: "styfle/cancel-workflow-action@0.5.0"
-        with:
-          access_token: "${{ github.token }}"
       - name: "Clean workspace"
         if: env.skip != 'true'
         run: |

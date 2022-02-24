@@ -1267,6 +1267,7 @@ class CommonDBTM extends CommonGLPI
                    // Auto create infocoms
                     if (
                         isset($CFG_GLPI["auto_create_infocoms"]) && $CFG_GLPI["auto_create_infocoms"]
+                        && (!isset($input['clone']) || !$input['clone'])
                         && Infocom::canApplyOn($this)
                     ) {
                         $ic = new Infocom();
@@ -5955,7 +5956,7 @@ class CommonDBTM extends CommonGLPI
             $params['entity_restrict'] = $this->getEntityID();
         }
 
-        return new MassiveAction($params, [], 'initial', true);
+        return new MassiveAction($params, [], 'initial', $this->getID());
     }
 
     /**

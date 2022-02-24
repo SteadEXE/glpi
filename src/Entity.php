@@ -283,6 +283,9 @@ class Entity extends CommonTreeDropdown
         }
 
         $input = parent::prepareInputForAdd($input);
+        if ($input === false) {
+            return false;
+        }
 
         $input = $this->handleConfigStrategyFields($input);
 
@@ -319,8 +322,10 @@ class Entity extends CommonTreeDropdown
      **/
     public function prepareInputForUpdate($input)
     {
-
         $input = parent::prepareInputForUpdate($input);
+        if ($input === false) {
+            return false;
+        }
 
         $input = $this->handleConfigStrategyFields($input);
 
@@ -571,10 +576,36 @@ class Entity extends CommonTreeDropdown
 
     public function post_updateItem($history = 1)
     {
+        global $GLPI_CACHE;
+
         parent::post_updateItem($history);
 
        // clean entity tree cache
         $this->cleanEntitySelectorCache();
+
+        // Delete any cache entry corresponding to an updated entity config
+        // for current entities and all its children
+        $entities_ids = array_merge([$this->fields['id']], getSonsOf(self::getTable(), $this->fields['id']));
+        $ignored_fields = [
+            'name',
+            'completename',
+            'entities_id',
+            'level',
+            'sons_cache',
+            'ancestors_cache',
+            'date_mod',
+            'date_creation',
+        ];
+        $cache_entries = [];
+        foreach ($this->updates as $field) {
+            if (in_array($field, $ignored_fields)) {
+                continue; // Ignore fields that cannot be used as config inheritance logic
+            }
+            foreach ($entities_ids as $entity_id) {
+                $cache_entries[] = sprintf('entity_%d_config_%s', $entity_id, $field);
+            }
+        }
+        $GLPI_CACHE->deleteMultiple($cache_entries);
     }
 
 
@@ -1858,7 +1889,11 @@ class Entity extends CommonTreeDropdown
         echo "<tr><th colspan='4'>" . __('Automatic inventory') . "</th></tr>";
         echo "<tr class='tab_bg_2'>";
         echo "<td><label for='agent_base_url'>" . __('Agent base URL') . "</label></td>";
-        echo "<td>" . Html::input('agent_base_url') . "</td>";
+        echo "<td>";
+        echo Html::input('agent_base_url', ['value' => $entity->fields['agent_base_url']]);
+        if (empty($entity->fields['agent_base_url']) && $ID > 0) {
+            self::inheritedValue(self::getUsedConfig('agent_base_url', $ID, '', ''));
+        }
         echo "</td><td colspan='2'></td></tr>";
 
         Plugin::doHook(Hooks::POST_ITEM_FORM, ['item' => $entity, 'options' => &$options]);
@@ -1912,7 +1947,7 @@ class Entity extends CommonTreeDropdown
         echo "<td>" . __('Administrator email address') . "</td>";
         echo "<td>";
         echo Html::input('admin_email', ['value' => $entity->fields['admin_email']]);
-        if (empty($entity->fields['admin_email'])) {
+        if (empty($entity->fields['admin_email']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('admin_email', $ID, '', ''));
         }
         echo "</td>";
@@ -1920,7 +1955,7 @@ class Entity extends CommonTreeDropdown
        // we inherit only if email inherit also
         echo Html::input('admin_email_name', ['value' => $entity->fields['admin_email_name']]);
        // warning, we rely on email field to inherit name field
-        if (empty($entity->fields['admin_email']) == 0) {
+        if (empty($entity->fields['admin_email']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('admin_email_name', $ID, '', ''));
         }
         echo "</td></tr>";
@@ -1929,7 +1964,7 @@ class Entity extends CommonTreeDropdown
         echo "<td>" . __('Email sender address') . "</td>";
         echo "<td>";
         echo Html::input('from_email', ['value' => $entity->fields['from_email']]);
-        if (empty($entity->fields['from_email']) == 0) {
+        if (empty($entity->fields['from_email']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('from_email', $ID, '', ''));
         }
         echo "</td>";
@@ -1937,7 +1972,7 @@ class Entity extends CommonTreeDropdown
         // we inherit only if email inherit also
         echo Html::input('from_email_name', ['value' => $entity->fields['from_email_name']]);
         // warning, we rely on email field to inherit name field
-        if (empty($entity->fields['from_email']) == 0) {
+        if (empty($entity->fields['from_email']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('from_email_name', $ID, '', ''));
         }
         echo "</td></tr>";
@@ -1946,7 +1981,7 @@ class Entity extends CommonTreeDropdown
         echo "<td>" . __('No-Reply address') . "</td>";
         echo "<td>";
         echo Html::input('noreply_email', ['value' => $entity->fields['noreply_email']]);
-        if (empty($entity->fields['noreply_email']) == 0) {
+        if (empty($entity->fields['noreply_email']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('noreply_email', $ID, '', ''));
         }
         echo "</td>";
@@ -1954,7 +1989,7 @@ class Entity extends CommonTreeDropdown
         // we inherit only if email inherit also
         echo Html::input('noreply_email_name', ['value' => $entity->fields['noreply_email_name']]);
         // warning, we rely on email field to inherit name field
-        if (empty($entity->fields['noreply_email']) == 0) {
+        if (empty($entity->fields['noreply_email']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('noreply_email_name', $ID, '', ''));
         }
         echo "</td></tr>";
@@ -1963,7 +1998,7 @@ class Entity extends CommonTreeDropdown
         echo "<td><label for='replyto_email'>" . __('Reply-To address') . "</label></td>";
         echo "<td>";
         echo Html::input('replyto_email', ['value' => $entity->fields['replyto_email']]);
-        if (empty($entity->fields['replyto_email']) == 0) {
+        if (empty($entity->fields['replyto_email']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('replyto_email', $ID, '', ''));
         }
         echo "</td>";
@@ -1971,7 +2006,7 @@ class Entity extends CommonTreeDropdown
         echo "<td>";
         echo Html::input('replyto_email_name', ['value' => $entity->fields['replyto_email_name']]);
        // warning, we rely on email field to inherit name field
-        if (empty($entity->fields['replyto_email']) == 0) {
+        if (empty($entity->fields['replyto_email']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('replyto_email_name', $ID, '', ''));
         }
         echo "</td></tr>";
@@ -1980,7 +2015,7 @@ class Entity extends CommonTreeDropdown
         echo "<td>" . __('Prefix for notifications') . "</td>";
         echo "<td>";
         echo Html::input('notification_subject_tag', ['value' => $entity->fields['notification_subject_tag']]);
-        if (empty($entity->fields['notification_subject_tag']) == 0) {
+        if (empty($entity->fields['notification_subject_tag']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('notification_subject_tag', $ID, '', ''));
         }
         echo "</td>";
@@ -2026,7 +2061,7 @@ class Entity extends CommonTreeDropdown
         echo "<td colspan='3'>";
         echo "<textarea rows='5' name='mailing_signature' class='form-control'>" .
              $entity->fields["mailing_signature"] . "</textarea>";
-        if (empty($entity->fields['mailing_signature']) == 0) {
+        if (empty($entity->fields['mailing_signature']) && $ID > 0) {
             self::inheritedValue(self::getUsedConfig('mailing_signature', $ID, '', ''));
         }
         echo "</td></tr>";
@@ -2657,10 +2692,7 @@ class Entity extends CommonTreeDropdown
 
         TicketTemplate::dropdown($options);
 
-        if (
-            ($entity->fields["tickettemplates_id"] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields["tickettemplates_id"] == self::CONFIG_PARENT) {
             $tt  = new TicketTemplate();
             $tid = self::getUsedConfig('tickettemplates_strategy', $ID, 'tickettemplates_id', 0);
             if (!$tid) {
@@ -2686,10 +2718,7 @@ class Entity extends CommonTreeDropdown
 
         ChangeTemplate::dropdown($options);
 
-        if (
-            ($entity->fields["changetemplates_id"] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields["changetemplates_id"] == self::CONFIG_PARENT) {
             $tt  = new ChangeTemplate();
             $tid = self::getUsedConfig('changetemplates_strategy', $ID, 'changetemplates_id', 0);
             if (!$tid) {
@@ -2715,10 +2744,7 @@ class Entity extends CommonTreeDropdown
 
         ProblemTemplate::dropdown($options);
 
-        if (
-            ($entity->fields["problemtemplates_id"] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields["problemtemplates_id"] == self::CONFIG_PARENT) {
             $tt  = new ProblemTemplate();
             $tid = self::getUsedConfig('problemtemplates_strategy', $ID, 'problemtemplates_id', 0);
             if (!$tid) {
@@ -2742,10 +2768,7 @@ class Entity extends CommonTreeDropdown
         }
         Calendar::dropdown($options);
 
-        if (
-            ($entity->fields["calendars_id"] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields["calendars_id"] == self::CONFIG_PARENT) {
             $calendar = new Calendar();
             $cid = self::getUsedConfig('calendars_strategy', $ID, 'calendars_id', 0);
             if (!$cid) {
@@ -2766,10 +2789,7 @@ class Entity extends CommonTreeDropdown
             'toadd' => $toadd
         ]);
 
-        if (
-            ($entity->fields['tickettype'] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields['tickettype'] == self::CONFIG_PARENT) {
             self::inheritedValue(Ticket::getTicketTypeName(self::getUsedConfig(
                 'tickettype',
                 $ID,
@@ -2794,10 +2814,7 @@ class Entity extends CommonTreeDropdown
             ['value' => $entity->fields["auto_assign_mode"]]
         );
 
-        if (
-            ($entity->fields['auto_assign_mode'] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields['auto_assign_mode'] == self::CONFIG_PARENT) {
             $auto_assign_mode = self::getUsedConfig('auto_assign_mode', $entity->fields['entities_id']);
             self::inheritedValue($autoassign[$auto_assign_mode], true);
         }
@@ -2819,7 +2836,7 @@ class Entity extends CommonTreeDropdown
         );
 
        // If the entity is using it's parent value, print it
-        if ($currentSupplierValue == self::CONFIG_PARENT && $ID != 0) {
+        if ($currentSupplierValue == self::CONFIG_PARENT) {
             $parentSupplierValue = self::getUsedConfig(
                 'suppliers_as_private',
                 $entity->fields['entities_id']
@@ -2844,7 +2861,7 @@ class Entity extends CommonTreeDropdown
         );
 
        // If the entity is using it's parent value, print it
-        if ($current_anonymize_value == self::CONFIG_PARENT && $ID != 0) {
+        if ($current_anonymize_value == self::CONFIG_PARENT) {
             $parent_helpdesk_value = self::getUsedConfig(
                 'anonymize_support_agents',
                 $entity->fields['entities_id']
@@ -2869,7 +2886,7 @@ class Entity extends CommonTreeDropdown
         );
 
        // If the entity is using it's parent value, print it
-        if ($currentInitialsValue == self::CONFIG_PARENT && $ID != 0) {
+        if ($currentInitialsValue == self::CONFIG_PARENT) {
             $parentSupplierValue = self::getUsedConfig(
                 'display_users_initials',
                 $entity->fields['entities_id']
@@ -2900,7 +2917,7 @@ class Entity extends CommonTreeDropdown
         ]);
 
         // If the entity is using it's parent value, print it
-        if ($current_default_contract_value == self::CONFIG_PARENT && $ID != 0) {
+        if ($current_default_contract_value == self::CONFIG_PARENT) {
             $inherited_default_contract_strategy = self::getUsedConfig(
                 'contracts_strategy_default',
                 $entity->fields['entities_id']
@@ -2961,10 +2978,7 @@ class Entity extends CommonTreeDropdown
             ]
         );
 
-        if (
-            ($entity->fields['autoclose_delay'] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields['autoclose_delay'] == self::CONFIG_PARENT) {
             $autoclose_mode = self::getUsedConfig(
                 'autoclose_delay',
                 $entity->fields['entities_id'],
@@ -3012,10 +3026,7 @@ class Entity extends CommonTreeDropdown
             ]
         );
 
-        if (
-            ($entity->fields['autopurge_delay'] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields['autopurge_delay'] == self::CONFIG_PARENT) {
             $autopurge_mode = self::getUsedConfig(
                 'autopurge_delay',
                 $entity->fields['entities_id'],
@@ -3057,11 +3068,7 @@ class Entity extends CommonTreeDropdown
         );
         echo "</td></tr>\n";
 
-       // Do not display for root entity in inherit case
-        if (
-            ($entity->fields['inquest_config'] == self::CONFIG_PARENT)
-            && ($ID != 0)
-        ) {
+        if ($entity->fields['inquest_config'] == self::CONFIG_PARENT) {
             $inquestconfig = self::getUsedConfig('inquest_config', $entity->fields['entities_id']);
             $inquestrate   = self::getUsedConfig(
                 'inquest_config',
@@ -3149,6 +3156,8 @@ class Entity extends CommonTreeDropdown
      **/
     public static function getUsedConfig($fieldref, $entities_id, $fieldval = '', $default_value = -2)
     {
+        global $DB, $GLPI_CACHE;
+
         $id_using_strategy = [
             'calendars_id',
             'changetemplates_id',
@@ -3171,47 +3180,56 @@ class Entity extends CommonTreeDropdown
             );
         }
 
-       // for calendar
         if (empty($fieldval)) {
             $fieldval = $fieldref;
         }
 
-        $entity = new self();
-       // Search in entity data of the current entity
-        if ($entity->getFromDB($entities_id)) {
-           // Value is defined : use it
-            if (isset($entity->fields[$fieldref])) {
-               // Numerical value
-                if (
-                    is_numeric($default_value)
-                    && ($entity->fields[$fieldref] != self::CONFIG_PARENT)
-                ) {
-                    return $entity->fields[$fieldval];
+        $ref_cache_key = sprintf('entity_%d_config_%s', $entities_id, $fieldref);
+        $val_cache_key = sprintf('entity_%d_config_%s', $entities_id, $fieldval);
+
+        $ref = $GLPI_CACHE->get($ref_cache_key);
+        $val = $fieldref === $fieldval ? $ref : $GLPI_CACHE->get($val_cache_key);
+
+        if ($ref === null || $val === null) {
+            $entities_query = [
+                'SELECT' => ['id', 'entities_id', $fieldref],
+                'FROM'   => self::getTable(),
+                'WHERE'  => ['id' => array_merge([$entities_id], getAncestorsOf(self::getTable(), $entities_id))]
+            ];
+            if ($fieldval !== $fieldref) {
+                $entities_query['SELECT'][] = $fieldval;
+            }
+            $entities_data = iterator_to_array($DB->request($entities_query));
+
+            $current_id = $entities_id;
+            while ($current_id !== null) {
+                if (!array_key_exists($current_id, $entities_data)) {
+                    break; // Cannot find entity data, so cannot continue
                 }
-               // String value
-                if (
-                    !is_numeric($default_value)
-                    && $entity->fields[$fieldref]
-                ) {
-                    return $entity->fields[$fieldval];
+
+                $entity_data = $entities_data[$current_id];
+
+                $ref = $entity_data[$fieldref];
+                $inherits = (is_numeric($default_value) && $ref == self::CONFIG_PARENT)
+                    || (!is_numeric($default_value) && !$ref);
+                if (!$inherits) {
+                    $val = $entity_data[$fieldval];
+                    break;
                 }
+
+                // Value inherited: parse parent data
+                $current_id = $entity_data['entities_id'];
             }
         }
 
-       // Entity data not found or not defined : search in parent one
-        if ($entities_id > 0) {
-            if ($entity->getFromDB($entities_id)) {
-                $ret = self::getUsedConfig(
-                    $fieldref,
-                    $entity->fields['entities_id'],
-                    $fieldval,
-                    $default_value
-                );
-                return $ret;
-            }
-        }
+        $GLPI_CACHE->setMultiple(
+            [
+                $ref_cache_key => $ref,
+                $val_cache_key => $val,
+            ]
+        );
 
-        return $default_value;
+        return $val ?? $default_value;
     }
 
 
