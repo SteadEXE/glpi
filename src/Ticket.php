@@ -693,7 +693,7 @@ class Ticket extends CommonITILObject
                         $nb = countElementsInTable(
                             ['glpi_tickets', 'glpi_tickets_users'],
                             [
-                                'glpi_tickets_users.tickets_id'  => new \QueryExpression(DB::quoteName('glpi_tickets.id')),
+                                'glpi_tickets_users.tickets_id'  => new \QueryExpression(DBmysql::quoteName('glpi_tickets.id')),
                                 'glpi_tickets_users.users_id'    => $item->getID(),
                                 'glpi_tickets_users.type'        => CommonITILActor::REQUESTER
                             ] + getEntitiesRestrictCriteria(self::getTable())
@@ -705,7 +705,7 @@ class Ticket extends CommonITILObject
                         $nb = countElementsInTable(
                             ['glpi_tickets', 'glpi_suppliers_tickets'],
                             [
-                                'glpi_suppliers_tickets.tickets_id'    => new \QueryExpression(DB::quoteName('glpi_tickets.id')),
+                                'glpi_suppliers_tickets.tickets_id'    => new \QueryExpression(DBmysql::quoteName('glpi_tickets.id')),
                                 'glpi_suppliers_tickets.suppliers_id'  => $item->getID()
                             ] + getEntitiesRestrictCriteria(self::getTable())
                         );
@@ -738,7 +738,7 @@ class Ticket extends CommonITILObject
                           $nb = countElementsInTable(
                               ['glpi_tickets', 'glpi_groups_tickets'],
                               [
-                                  'glpi_groups_tickets.tickets_id' => new \QueryExpression(DB::quoteName('glpi_tickets.id')),
+                                  'glpi_groups_tickets.tickets_id' => new \QueryExpression(DBmysql::quoteName('glpi_tickets.id')),
                                   'glpi_groups_tickets.groups_id'  => $item->getID(),
                                   'glpi_groups_tickets.type'       => CommonITILActor::REQUESTER
                               ] + getEntitiesRestrictCriteria(self::getTable())
@@ -1771,8 +1771,8 @@ class Ticket extends CommonITILObject
                 foreach ($items as $items_id) {
                     if ($item = getItemForItemtype($itemtype)) {
                         $item->getFromDB($items_id);
-                        $input['_states_id_of_item']    = $item->fields['states_id'];
-                        $input['_locations_id_of_item'] = $item->fields['locations_id'];
+                        $input['_states_id_of_item']    = $item->fields['states_id'] ?? null;
+                        $input['_locations_id_of_item'] = $item->fields['locations_id'] ?? null;
                         if ($infocom->getFromDBforDevice($itemtype, $items_id)) {
                              $input['items_businesscriticities']
                               = Dropdown::getDropdownName(
@@ -4064,8 +4064,6 @@ JAVASCRIPT;
      **/
     public function showFormHelpdesk($ID, $ticket_template = false)
     {
-        global $CFG_GLPI;
-
         if (!self::canCreate()) {
             return false;
         }
@@ -4182,6 +4180,7 @@ JAVASCRIPT;
             $options['itilcategories_id'],
             $_SESSION["glpiactive_entity"]
         );
+        $options['_tickettemplate'] = $tt;
 
         $delegating = User::getDelegateGroupsForUser($options['entities_id']);
 
@@ -4505,20 +4504,19 @@ JAVASCRIPT;
             $this->check(-1, CREATE, $options);
         }
 
-        $this->userentities = [];
+        $userentities = [];
         if (!$ID) {
-            $this->userentities         = $this->getEntitiesForRequesters($options);
-            $this->countentitiesforuser = count($this->userentities);
+            $userentities         = $this->getEntitiesForRequesters($options);
 
             if (
-                ($this->countentitiesforuser > 0)
-                && !in_array($this->fields["entities_id"], $this->userentities)
+                count($userentities) > 0
+                && !in_array($this->fields["entities_id"], $userentities)
             ) {
                // If entity is not in the list of user's entities,
                // then use as default value the first value of the user's entites list
-                $this->fields["entities_id"] = $this->userentities[0];
+                $this->fields["entities_id"] = $userentities[0];
                // Pass to values
-                $options['entities_id']       = $this->userentities[0];
+                $options['entities_id']       = $userentities[0];
             }
         }
 
@@ -4658,7 +4656,7 @@ JAVASCRIPT;
             'canassign'          => $canassign,
             'canassigntome'      => $canassigntome,
             'load_kb_sol'        => $options['load_kb_sol'] ?? 0,
-            'userentities'       => $this->userentities,
+            'userentities'       => $userentities,
         ]);
 
         return true;

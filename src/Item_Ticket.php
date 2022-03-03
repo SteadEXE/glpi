@@ -48,7 +48,10 @@ class Item_Ticket extends CommonItilObject_Item
     public static $items_id_2          = 'items_id';
     public static $checkItem_2_Rights  = self::HAVE_VIEW_RIGHT_ON_ITEM;
 
-
+    public static function getTypeName($nb = 0)
+    {
+        return _n('Ticket item', 'Ticket items', $nb);
+    }
 
     /**
      * @since 0.84
@@ -205,7 +208,8 @@ class Item_Ticket extends CommonItilObject_Item
             return false;
         }
 
-        $canedit = ($ticket->can($params['id'], UPDATE)
+        $can_add_items = $_SESSION["glpiactiveprofile"]["helpdesk_hardware"] & pow(2, Ticket::HELPDESK_MY_HARDWARE) || $_SESSION["glpiactiveprofile"]["helpdesk_hardware"] & pow(2, Ticket::HELPDESK_ALL_HARDWARE);
+        $canedit = ($can_add_items && $ticket->can($params['id'], UPDATE)
                   && $params['_canupdate']);
 
        // Ticket update case

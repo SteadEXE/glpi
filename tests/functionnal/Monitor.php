@@ -75,6 +75,7 @@ class Monitor extends DbTestCase
             'states_id' => 0,
             'ticket_tco' => '0.0000',
             'is_dynamic' => 0,
+            'autoupdatesystems_id' => 0,
             'date_creation' => $date,
             'is_recursive' => 0,
             'uuid' => null,
@@ -124,6 +125,9 @@ class Monitor extends DbTestCase
         $this->boolean($clonedMonitor->getFromDB($added))->isTrue();
 
         $expected = Monitor::getMonitorFields($added, $date);
+
+        $this->string($clonedMonitor->fields['name'])->isEqualTo("$expected[name] (copy)");
+        unset($clonedMonitor->fields['name'], $expected['name']);
 
         $this->array($clonedMonitor->fields)->isEqualTo($expected);
     }

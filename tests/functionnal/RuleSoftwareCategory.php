@@ -56,7 +56,7 @@ class RuleSoftwareCategory extends DbTestCase
     {
         $category = new \RuleSoftwareCategory();
         $actions  = $category->getActions();
-        $this->array($actions)->hasSize(3);
+        $this->array($actions)->hasSize(4);
     }
 
     public function testDefaultRuleExists()
@@ -107,7 +107,7 @@ class RuleSoftwareCategory extends DbTestCase
         $this->boolean($rule->getFromDB($cloned))->isTrue();
 
         $this->integer($rule->fields['is_active'])->isIdenticalTo(0);
-        $this->string($rule->fields['name'])->isIdenticalTo('Copy of Import category from inventory tool');
+        $this->string($rule->fields['name'])->isIdenticalTo('Import category from inventory tool (copy)');
 
         foreach ($relations as $relation => $expected) {
             $this->integer(

@@ -851,6 +851,10 @@ class MassiveAction
                     }
 
                     echo "</tr><tr>";
+                    // Remove empty option groups
+                    $options = array_filter($options, static function ($v) {
+                        return !is_array($v) || count($v) > 0;
+                    });
                     if ($choose_field) {
                         echo "<td>";
                         $field_rand = Dropdown::showFromArray(
@@ -1426,13 +1430,7 @@ class MassiveAction
                     if ($item->can($id, CREATE)) {
                         // recovers the item from DB
                         if ($item->getFromDB($id)) {
-                            $succeed = true;
-                          // clone in a loop
-                            for ($i = 0; $i < $input["nb_copy"] && $succeed; $i++) {
-                                if ($item->clone() === false) {
-                                    $succeed = false;
-                                }
-                            }
+                            $succeed = $item->cloneMultiple($input["nb_copy"]);
                             if ($succeed) {
                                 $ma->itemDone($item->getType(), $id, MassiveAction::ACTION_OK);
                             } else {

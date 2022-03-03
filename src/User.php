@@ -39,7 +39,9 @@ use Sabre\VObject;
 
 class User extends CommonDBTM
 {
-    use Glpi\Features\Clonable;
+    use Glpi\Features\Clonable {
+        Glpi\Features\Clonable::computeCloneName as baseComputeCloneName;
+    }
     use Glpi\Features\TreeBrowse;
 
    // From CommonDBTM
@@ -331,7 +333,7 @@ class User extends CommonDBTM
 
         $entities = $this->getEntities();
         $view_all = Session::canViewAllEntities();
-       // Have right on all entities ?
+        // Have right on all entities ?
         $all      = true;
         if (!$view_all) {
             foreach ($entities as $ent) {
@@ -343,10 +345,10 @@ class User extends CommonDBTM
         if ($all) { // Mark as deleted
             return true;
         }
-       // only delete profile
+
+        // only delete profile
         foreach ($entities as $ent) {
             if (Session::haveAccessToEntity($ent)) {
-                $all   = false;
                 $DB->delete(
                     'glpi_profiles_users',
                     [
@@ -355,8 +357,8 @@ class User extends CommonDBTM
                     ]
                 );
             }
-            return false;
         }
+        return false;
     }
 
 
@@ -735,20 +737,14 @@ class User extends CommonDBTM
         return $input;
     }
 
-    public function prepareInputForClone($input)
-    {
-        if (isset($input['name'])) {
-            $suffix = 1;
-            $possibleName = $input['name'] . $suffix;
-            while ($this->getFromDBbyName($possibleName)) {
-                $suffix++;
-                $possibleName = $input['name'] . $suffix;
-            }
-            $input['name'] = $possibleName;
-        }
-        return $input;
+    public function computeCloneName(
+        string $current_name,
+        ?int $copy_index = null
+    ): string {
+        return Toolbox::slugify(
+            $this->baseComputeCloneName($current_name, $copy_index)
+        );
     }
-
 
     public function post_addItem()
     {
@@ -1569,9 +1565,9 @@ class User extends CommonDBTM
      * @param string   $userdn          Basedn of the user
      * @param string   $login           User login
      *
-     * @return string|boolean Basedn of the user / false if not found
+     * @return void
      */
-    private function getFromLDAPGroupVirtual($ldap_connection, array $ldap_method, $userdn, $login)
+    private function getFromLDAPGroupVirtual($ldap_connection, array $ldap_method, $userdn, $login): void
     {
         global $DB;
 
@@ -1638,9 +1634,9 @@ class User extends CommonDBTM
                         $lgroups = [];
                         foreach (Toolbox::addslashes_deep($v[$i][$field]) as $lgroup) {
                             $lgroups[] = [
-                                new \QueryExpression($DB::quoteValue($lgroup) .
+                                new \QueryExpression($DB->quoteValue($lgroup) .
                                              " LIKE " .
-                                             $DB::quoteName('ldap_value'))
+                                             $DB->quoteName('ldap_value'))
                             ];
                         }
                         $group_iterator = $DB->request([
@@ -1838,7 +1834,10 @@ class User extends CommonDBTM
                             break;
 
                         case 'users_id_supervisor':
-                            $this->fields[$k] = self::getIdByField('user_dn', $val, false);
+                            $supervisor_id = self::getIdByField('user_dn', $val, false);
+                            if ($supervisor_id) {
+                                $this->fields[$k] = $supervisor_id;
+                            }
                             break;
 
                         default:
@@ -3926,6 +3925,7 @@ JAVASCRIPT;
         $joinprofileright = false;
         $WHERE = [];
 
+
         switch ($right) {
             case "interface":
                 $joinprofile = true;
@@ -4377,7 +4377,7 @@ JAVASCRIPT;
 
         // Make a select box with all glpi users
         if (!$p['multiple']) {
-            $user = getUserName($p['value'], 2);
+            $user = getUserName($p['value'], 2, true);
         }
 
         if ($p['readonly']) {
@@ -6130,10 +6130,10 @@ JAVASCRIPT;
         }
 
         $table  = self::getTable();
-        $first  = DB::quoteName("$table.$first");
-        $second = DB::quoteName("$table.$second");
-        $alias  = DB::quoteName($alias);
-        $name   = DB::quoteName(self::getNameField());
+        $first  = DBmysql::quoteName("$table.$first");
+        $second = DBmysql::quoteName("$table.$second");
+        $alias  = DBmysql::quoteName($alias);
+        $name   = DBmysql::quoteName(self::getNameField());
 
         return new QueryExpression("IF(
             $first <> '' && $second <> '',

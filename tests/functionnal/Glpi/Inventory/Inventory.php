@@ -167,6 +167,7 @@ class Inventory extends InventoryTestCase
             'states_id' => 0,
             'ticket_tco' => '0.0000',
             'is_dynamic' => 1,
+            'autoupdatesystems_id' => 0,
             'uuid' => null,
             'is_recursive' => 0,
             'linkid' => $monitor_link['linkid'],
@@ -1830,12 +1831,11 @@ class Inventory extends InventoryTestCase
         //check inventory metadata
         $metadata = $inventory->getMetadata();
 
-        $this->array($metadata)->hasSize(5)
+        $this->array($metadata)->hasSize(4)
          ->string['deviceid']->isIdenticalTo('foo')
          ->string['version']->isIdenticalTo('4.1')
          ->string['itemtype']->isIdenticalTo('NetworkEquipment')
          ->string['action']->isIdenticalTo('netinventory');
-        $this->array($metadata['provider'])->hasSize(0);
 
         global $DB;
        //check created agent
@@ -2168,30 +2168,26 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $_SESSION['glpi_currenttime'] = $date_now;
         $inventory = $this->doInventory($json);
 
-       //check inventory metadata
+        //check inventory metadata
         $metadata = $inventory->getMetadata();
 
-        $this->array($metadata)->hasSize(5)
+        $this->array($metadata)->hasSize(4)
          ->string['deviceid']->isIdenticalTo('3k-1-pa3.glpi-project.infra-2020-12-31-11-28-51')
          ->string['version']->isIdenticalTo('4.1')
          ->string['itemtype']->isIdenticalTo('NetworkEquipment')
          ->string['action']->isIdenticalTo('netinventory');
-        $this->array($metadata['provider'])->hasSize(0);
 
         global $DB;
-       //check created agent
+        //check created agent
         $agenttype = $DB->request(['FROM' => \AgentType::getTable(), 'WHERE' => ['name' => 'Core']])->current();
-        $agents = $DB->request(['FROM' => \Agent::getTable()]);
-        $this->integer(count($agents))->isIdenticalTo(1);
-        $agent = $agents->current();
-        $this->array($agent)
+        $this->array($inventory->getAgent()->fields)
          ->string['deviceid']->isIdenticalTo('3k-1-pa3.glpi-project.infra-2020-12-31-11-28-51')
          ->string['name']->isIdenticalTo('3k-1-pa3.glpi-project.infra-2020-12-31-11-28-51')
          //->string['version']->isIdenticalTo('')
          ->string['itemtype']->isIdenticalTo('NetworkEquipment')
          ->integer['agenttypes_id']->isIdenticalTo($agenttype['id']);
 
-       //get model, manufacturer, ...
+        //get model, manufacturer, ...
         $autoupdatesystems = $DB->request(['FROM' => \AutoupdateSystem::getTable(), 'WHERE' => ['name' => 'GLPI Native Inventory']])->current();
         $this->array($autoupdatesystems);
         $autoupdatesystems_id = $autoupdatesystems['id'];
@@ -2212,7 +2208,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $this->array($cloc);
         $locations_id = $cloc['id'];
 
-       //check created equipments
+        //check created equipments
         $expected_eq_count = 5;
         $iterator = $DB->request([
             'FROM'   => \NetworkEquipment::getTable(),
@@ -2294,7 +2290,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             $expected['serial'] = $stacks[$stack_id]['serial'];
             $this->array($row)->isIdenticalTo($expected);
 
-           //check network ports
+            //check network ports
             $expected_count = 53;
             $ports_iterator = $DB->request([
                 'FROM'   => \NetworkPort::getTable(),
@@ -2411,7 +2407,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
                 }
                 ++$i;
 
-               //check for ips
+                //check for ips
                 $ip_iterator = $DB->request([
                     'SELECT'       => [
                         \IPAddress::getTable() . '.name',
@@ -2442,7 +2438,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
                 }
             }
 
-           //check for components
+            //check for components
             $components = [];
             $allcount = 0;
             foreach (\Item_Devices::getItemAffinities('NetworkEquipment') as $link_type) {
@@ -2519,7 +2515,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
                 $this->array($component)->isIdenticalTo($expected);
             }
 
-           //ports connections
+            //ports connections
             $connections = $DB->request([
                 'FROM'   => \NetworkPort_NetworkPort::getTable(),
                 'WHERE'  => [
@@ -2619,7 +2615,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
          ++$i;
        }*/
 
-       //check matchedlogs
+        //check matchedlogs
         $mlogs = new \RuleMatchedLog();
         $found = $mlogs->find();
         $this->array($found)->hasSize(48);
@@ -2660,29 +2656,25 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $_SESSION['glpi_currenttime'] = $date_now;
         $inventory = $this->doInventory($json);
 
-       //check inventory metadata
+        //check inventory metadata
         $metadata = $inventory->getMetadata();
 
-        $this->array($metadata)->hasSize(5)
+        $this->array($metadata)->hasSize(4)
          ->string['deviceid']->isIdenticalTo('HP-2530-48G-2020-12-31-11-28-51')
          ->string['version']->isIdenticalTo('2.5')
          ->string['itemtype']->isIdenticalTo('NetworkEquipment')
          ->string['action']->isIdenticalTo('netinventory');
-        $this->array($metadata['provider'])->hasSize(0);
 
         global $DB;
-       //check created agent
+        //check created agent
         $agenttype = $DB->request(['FROM' => \AgentType::getTable(), 'WHERE' => ['name' => 'Core']])->current();
-        $agents = $DB->request(['FROM' => \Agent::getTable()]);
-        $this->integer(count($agents))->isIdenticalTo(1);
-        $agent = $agents->current();
-        $this->array($agent)
+        $this->array($inventory->getAgent()->fields)
          ->string['deviceid']->isIdenticalTo('HP-2530-48G-2020-12-31-11-28-51')
          ->string['name']->isIdenticalTo('HP-2530-48G-2020-12-31-11-28-51')
          ->string['itemtype']->isIdenticalTo('NetworkEquipment')
          ->integer['agenttypes_id']->isIdenticalTo($agenttype['id']);
 
-       //get model, manufacturer, ...
+        //get model, manufacturer, ...
         $autoupdatesystems = $DB->request(['FROM' => \AutoupdateSystem::getTable(), 'WHERE' => ['name' => 'GLPI Native Inventory']])->current();
         $this->array($autoupdatesystems);
         $autoupdatesystems_id = $autoupdatesystems['id'];
@@ -2698,13 +2690,9 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $cmanuf = $DB->request(['FROM' => \Manufacturer::getTable(), 'WHERE' => ['name' => 'Hewlett-Packard']])->current();
         $this->array($cmanuf);
         $manufacturers_id = $cmanuf['id'];
-
-       /*$cloc = $DB->request(['FROM' => \Location::getTable(), 'WHERE' => ['name' => 'paris.pa3']])->current();
-       $this->array($cloc);
-       $locations_id = $cloc['id'];*/
         $locations_id = 0;
 
-       //check created equipments
+        //check created equipments
         $expected_count = 1;
         $iterator = $DB->request([
             'FROM'   => \NetworkEquipment::getTable(),
@@ -2758,7 +2746,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             $expected['date_creation'] = $row['date_creation'];
             $this->array($row)->isIdenticalTo($expected);
 
-           //check network ports
+            //check network ports
             $expected_count = 53;
             $ports_iterator = $DB->request([
                 'FROM'   => \NetworkPort::getTable(),
@@ -2847,7 +2835,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
                 }
                 ++$i;
 
-               //check for ips
+                //check for ips
                 $ip_iterator = $DB->request([
                     'SELECT'       => [
                         \IPAddress::getTable() . '.name',
@@ -2878,7 +2866,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
                 }
             }
 
-           //check for components
+            //check for components
             $components = [];
             $allcount = 0;
             foreach (\Item_Devices::getItemAffinities('NetworkEquipment') as $link_type) {
@@ -2944,7 +2932,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
 
             foreach ($expecteds as $type => $expected) {
                 $component = array_values($components[$type]);
-               //hack to replace expected fkeys
+                //hack to replace expected fkeys
                 foreach ($expected as $i => &$row) {
                     foreach (array_keys($row) as $key) {
                         if (isForeignKeyField($key)) {
@@ -2955,7 +2943,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
                 $this->array($component)->isIdenticalTo($expected);
             }
 
-           //ports connections
+            //ports connections
             $connections = $DB->request([
                 'FROM'   => \NetworkPort_NetworkPort::getTable(),
             ]);
@@ -3298,7 +3286,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             ++$i;
         }
 
-       //check matchedlogs
+        //check matchedlogs
         $mlogs = new \RuleMatchedLog();
         $found = $mlogs->find();
         $this->array($found)->hasSize(61);
@@ -3343,20 +3331,16 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
        //check inventory metadata
         $metadata = $inventory->getMetadata();
 
-        $this->array($metadata)->hasSize(5)
+        $this->array($metadata)->hasSize(4)
          ->string['deviceid']->isIdenticalTo('CH-GV1-DSI-WLC-INSID-1-2020-12-31-11-28-51')
          ->string['version']->isIdenticalTo('4.1')
          ->string['itemtype']->isIdenticalTo('NetworkEquipment')
          ->string['action']->isIdenticalTo('netinventory');
-        $this->array($metadata['provider'])->hasSize(0);
 
         global $DB;
        //check created agent
         $agenttype = $DB->request(['FROM' => \AgentType::getTable(), 'WHERE' => ['name' => 'Core']])->current();
-        $agents = $DB->request(['FROM' => \Agent::getTable()]);
-        $this->integer(count($agents))->isIdenticalTo(1);
-        $agent = $agents->current();
-        $this->array($agent)
+        $this->array($inventory->getAgent()->fields)
          ->string['deviceid']->isIdenticalTo('CH-GV1-DSI-WLC-INSID-1-2020-12-31-11-28-51')
          ->string['name']->isIdenticalTo('CH-GV1-DSI-WLC-INSID-1-2020-12-31-11-28-51')
          //->string['version']->isIdenticalTo('')
@@ -3724,30 +3708,26 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $_SESSION["glpi_currenttime"] = $date_now;
         $inventory = $this->doInventory($json);
 
-       //check inventory metadata
+        //check inventory metadata
         $metadata = $inventory->getMetadata();
 
-        $this->array($metadata)->hasSize(5)
+        $this->array($metadata)->hasSize(4)
          ->string['deviceid']->isIdenticalTo('DGS-3420-52T-2020-12-31-11-28-51')
          ->string['version']->isIdenticalTo('4.1')
          ->string['itemtype']->isIdenticalTo('NetworkEquipment')
          ->string['action']->isIdenticalTo('netinventory');
-        $this->array($metadata['provider'])->hasSize(0);
 
         global $DB;
-       //check created agent
+        //check created agent
         $agenttype = $DB->request(['FROM' => \AgentType::getTable(), 'WHERE' => ['name' => 'Core']])->current();
-        $agents = $DB->request(['FROM' => \Agent::getTable()]);
-        $this->integer(count($agents))->isIdenticalTo(1);
-        $agent = $agents->current();
-        $this->array($agent)
+        $this->array($inventory->getAgent()->fields)
          ->string['deviceid']->isIdenticalTo('DGS-3420-52T-2020-12-31-11-28-51')
          ->string['name']->isIdenticalTo('DGS-3420-52T-2020-12-31-11-28-51')
          //->string['version']->isIdenticalTo('')
          ->string['itemtype']->isIdenticalTo('NetworkEquipment')
          ->integer['agenttypes_id']->isIdenticalTo($agenttype['id']);
 
-       //get model, manufacturer, ...
+        //get model, manufacturer, ...
         $autoupdatesystems = $DB->request(['FROM' => \AutoupdateSystem::getTable(), 'WHERE' => ['name' => 'GLPI Native Inventory']])->current();
         $this->array($autoupdatesystems);
         $autoupdatesystems_id = $autoupdatesystems['id'];
@@ -3768,8 +3748,8 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $this->array($cloc);
         $locations_id = $cloc['id'];
 
-       //check created computer
-        $equipments_id = $agent['items_id'];
+        //check created computer
+        $equipments_id = $inventory->getAgent()->fields['items_id'];
         $this->integer($equipments_id)->isGreaterThan(0);
         $equipment = new \NetworkEquipment();
         $this->boolean($equipment->getFromDB($equipments_id))->isTrue();
@@ -3812,7 +3792,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         ];
         $this->array($equipment->fields)->isIdenticalTo($expected);
 
-       //check network ports
+        //check network ports
         $expected_count = 53;
         $iterator = $DB->request([
             'FROM'   => \NetworkPort::getTable(),
@@ -3907,7 +3887,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             }
             ++$i;
 
-           //check for ips
+            //check for ips
             $ip_iterator = $DB->request([
                 'SELECT'       => [
                     \IPAddress::getTable() . '.name',
@@ -3938,7 +3918,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             }
         }
 
-       //check for components
+        //check for components
         $components = [];
         $allcount = 0;
         foreach (\Item_Devices::getItemAffinities('NetworkEquipment') as $link_type) {
@@ -4015,11 +3995,11 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             $this->array($component)->isIdenticalTo($expected);
         }
 
-       //ports connections
+        //ports connections
         $connections = $DB->request(['FROM' => \NetworkPort_NetworkPort::getTable()]);
         $this->integer(count($connections))->isIdenticalTo(36);
 
-       //unmanaged equipments
+        //unmanaged equipments
         $unmanageds = $DB->request(['FROM' => \Unmanaged::getTable()]);
         $this->integer(count($unmanageds))->isIdenticalTo(36);
     }
@@ -4386,7 +4366,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
 
         //check inventory metadata
         $metadata = $inventory->getMetadata();
-        $this->array($metadata)->hasSize(5)
+        $this->array($metadata)->hasSize(4)
          ->string['deviceid']->isIdenticalTo('acomputer-2021-01-26-14-32-36')
          ->string['itemtype']->isIdenticalTo('Computer')
          ->string['action']->isIdenticalTo('inventory');
@@ -4407,7 +4387,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
 
         //check inventory metadata
         $metadata = $inventory->getMetadata();
-        $this->array($metadata)->hasSize(5)
+        $this->array($metadata)->hasSize(4)
          ->string['deviceid']->isIdenticalTo('acomputer-2021-01-26-14-32-36')
          ->string['itemtype']->isIdenticalTo('Computer')
          ->string['action']->isIdenticalTo('inventory');
@@ -4633,16 +4613,15 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
 
         $inventory = $this->doInventory($json);
 
-       //check inventory metadata
+        //check inventory metadata
         $metadata = $inventory->getMetadata();
-        $this->array($metadata)->hasSize(5)
+        $this->array($metadata)->hasSize(4)
          ->string['deviceid']->isIdenticalTo('Mi9TPro-TéléphoneM-2019-12-18-14-30-16')
          ->string['version']->isIdenticalTo('example-app-java')
          ->string['itemtype']->isIdenticalTo('Phone')
          ->string['action']->isIdenticalTo('inventory');
-        $this->array($metadata['provider'])->hasSize(0);
 
-       //check created agent
+        //check created agent
         $agenttype = $DB->request(['FROM' => \AgentType::getTable(), 'WHERE' => ['name' => 'Core']])->current();
         $agents = $DB->request(['FROM' => \Agent::getTable()]);
         $this->integer(count($agents))->isIdenticalTo(1);
@@ -4653,7 +4632,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
          ->string['itemtype']->isIdenticalTo('Phone')
          ->integer['agenttypes_id']->isIdenticalTo($agenttype['id']);
 
-       //get computer models, manufacturer, ...
+        //get computer models, manufacturer, ...
         $autoupdatesystems = $DB->request(['FROM' => \AutoupdateSystem::getTable(), 'WHERE' => ['name' => 'GLPI Native Inventory']])->current();
         $this->array($autoupdatesystems);
         $autoupdatesystems_id = $autoupdatesystems['id'];
@@ -4670,8 +4649,8 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $this->array($cmanuf);
         $manufacturers_id = $cmanuf['id'];
 
-       //check created computer
-        $computers_id = $agent['items_id'];
+        //check created computer
+        $computers_id = $inventory->getAgent()->fields['items_id'];
         $this->integer($computers_id)->isGreaterThan(0);
         $computer = new \Phone();
         $this->boolean($computer->getFromDB($computers_id))->isTrue();
@@ -4706,14 +4685,14 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             'states_id' => 0,
             'ticket_tco' => '0.0000',
             'is_dynamic' => 1,
+            'autoupdatesystems_id' => $autoupdatesystems_id,
             'uuid' => 'af8d3fcfa6fe4784',
             'date_creation' => $computer->fields['date_creation'],
             'is_recursive' => 0,
-         //'autoupdatesystems_id' => $autoupdatesystems_id,
         ];
         $this->array($computer->fields)->isIdenticalTo($expected);
 
-       //operating system
+        //operating system
         $ios = new \Item_OperatingSystem();
         $iterator = $ios->getFromItem($computer);
         $record = $iterator->current();
@@ -4727,12 +4706,12 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         ];
         $this->array($record)->isIdenticalTo($expected);
 
-       //remote management
+        //remote management
         $mgmt = new \Item_RemoteManagement();
         $iterator = $mgmt->getFromItem($computer);
         $this->integer(count($iterator))->isIdenticalTo(0);
 
-       //volumes
+        //volumes
         $idisks = new \Item_Disk();
         $iterator = $idisks->getFromItem($computer);
         $this->integer(count($iterator))->isIdenticalTo(4);
@@ -4781,7 +4760,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             ++$i;
         }
 
-       //check network ports
+        //check network ports
         $iterator = $DB->request([
             'FROM'   => \NetworkPort::getTable(),
             'WHERE'  => [
@@ -4851,7 +4830,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             $this->array($port)->isEqualTo($expected);
             ++$i;
 
-           //check for ips
+            //check for ips
             $ip_iterator = $DB->request([
                 'SELECT'       => [
                     \IPAddress::getTable() . '.name',
@@ -4883,7 +4862,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             }
         }
 
-       //check for components
+        //check for components
         $components = [];
         $allcount = 0;
         foreach (\Item_Devices::getItemAffinities('Computer') as $link_type) {
@@ -5077,7 +5056,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
             $this->array($component)->isIdenticalTo($expected);
         }
 
-       //softwares
+        //software
         $isoft = new \Item_SoftwareVersion();
         $iterator = $isoft->getFromItem($computer);
         $this->integer(count($iterator))->isIdenticalTo(3);
@@ -5114,21 +5093,21 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
     {
         global $DB;
 
-       //initial import
+        //initial import
         $this->testImportComputer();
 
         $json = file_get_contents(self::INV_FIXTURES . 'computer_1_partial_volumes.json');
         $inventory = $this->doInventory($json);
 
-       //check inventory metadata
+        //check inventory metadata
         $metadata = $inventory->getMetadata();
-        $this->array($metadata)->hasSize(6)
+        $this->array($metadata)->hasSize(5)
          ->string['deviceid']->isIdenticalTo('glpixps-2018-07-09-09-07-13')
          ->string['version']->isIdenticalTo('FusionInventory-Agent_v2.5.2-1.fc31')
          ->string['itemtype']->isIdenticalTo('Computer')
          ->string['action']->isIdenticalTo('inventory');
 
-       //check created agent
+        //check created agent
         $agenttype = $DB->request(['FROM' => \AgentType::getTable(), 'WHERE' => ['name' => 'Core']])->current();
         $agents = $DB->request(['FROM' => \Agent::getTable()]);
         $this->integer(count($agents))->isIdenticalTo(1);
@@ -5142,7 +5121,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
 
         $computer = $this->checkComputer1($agent['items_id']);
 
-       //volumes free sizes
+        //volumes free sizes
         $sizes = [
             11883,
             15924,
@@ -5158,7 +5137,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $json = file_get_contents(self::INV_FIXTURES . 'computer_1_partial_softs.json');
         $inventory = $this->doInventory($json);
 
-       //software versions
+        //software versions
         $versions = [
             '2.2.8-1.fc31',
             '0.20.1-3.fc31',
@@ -5172,7 +5151,7 @@ Compiled Tue 28-Sep-10 13:44 by prod_rel_team",
         $json = file_get_contents(self::INV_FIXTURES . 'computer_1_partial_batteries.json');
         $inventory = $this->doInventory($json);
 
-       //software versions
+        //software versions
         $capacities = [
             40570,
         ];

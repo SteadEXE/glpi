@@ -2874,7 +2874,12 @@ class Rule extends CommonDBTM
 
     public function getActions()
     {
-        return [];
+        return [
+            '_stop_rules_processing' => [
+                'name' => __('Skip remaining rules'),
+                'type' => 'yesonly',
+            ]
+        ];
     }
 
 
@@ -3316,7 +3321,7 @@ class Rule extends CommonDBTM
                              $nb = countElementsInTable(
                                  ['glpi_rules', 'glpi_ruleactions'],
                                  [
-                                     'glpi_ruleactions.rules_id'   => new \QueryExpression(DB::quoteName('glpi_rules.id')),
+                                     'glpi_ruleactions.rules_id'   => new \QueryExpression(DBmysql::quoteName('glpi_rules.id')),
                                      'glpi_rules.sub_type'         => $types,
                                      'glpi_ruleactions.field'      => 'entities_id',
                                      'glpi_ruleactions.value'      => $item->getID()
@@ -3468,7 +3473,6 @@ class Rule extends CommonDBTM
         $nextRanking = $this->getNextRanking();
 
        //Update fields of the new collection
-        $input['name']        = sprintf(__('Copy of %s'), $input['name']);
         $input['is_active']   = 0;
         $input['ranking']     = $nextRanking;
         $input['uuid']        = static::getUuid();

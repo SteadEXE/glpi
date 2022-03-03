@@ -34,7 +34,7 @@
 use Glpi\SocketModel;
 
 // Current version of GLPI
-define('GLPI_VERSION', '10.0.0-rc1');
+define('GLPI_VERSION', '10.0.0-rc2');
 define(
     "GLPI_SCHEMA_VERSION",
     GLPI_VERSION . (
@@ -524,6 +524,8 @@ $CFG_GLPI['appliance_relation_types'] = ['Location', 'Network', 'Domain'];
 $CFG_GLPI['remote_management_types'] = ['Computer', 'Phone'];
 
 $CFG_GLPI['databaseinstance_types'] = ['Computer'];
+
+$CFG_GLPI['agent_types'] = ['Computer', 'Phone'];
 
 $dashboard_libs = [
     'dashboard', 'gridstack',
