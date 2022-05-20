@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -561,6 +563,34 @@ class Computer extends DbTestCase
         ]);
     }
 
+    public function testCloneWithSpecificName()
+    {
+        /** @var \Computer $computer */
+        $computer = $this->getNewComputer();
+        $clone_id = $computer->clone([
+            'name' => 'testCloneWithSpecificName'
+        ]);
+        $this->integer($clone_id)->isGreaterThan(0);
+        $result = $computer->getFromDB($clone_id);
+        $this->boolean($result)->isTrue();
+        $this->string($computer->fields['name'])->isEqualTo('testCloneWithSpecificName');
+    }
+
+    public function testCloneWithAutoName()
+    {
+        /** @var \Computer $computer */
+        $computer = $this->getNewComputer();
+        $computer->update([
+            'id' => $computer->fields['id'],
+            'name' => 'testCloneWithAutoName'
+        ]);
+        $clone_id = $computer->clone();
+        $this->integer($clone_id)->isGreaterThan(0);
+        $result = $computer->getFromDB($clone_id);
+        $this->boolean($result)->isTrue();
+        $this->string($computer->fields['name'])->isEqualTo('testCloneWithAutoName (copy)');
+    }
+
     public function testTransfer()
     {
         $this->login();
@@ -622,5 +652,28 @@ class Computer extends DbTestCase
             ]
         ]);
         $this->integer(count($softwares))->isidenticalTo(1);
+    }
+
+    public function testClearSavedInputAfterUpdate()
+    {
+        $this->login();
+
+        // Check that there is no saveInput already
+        if (isset($_SESSION['saveInput']) && is_array($_SESSION['saveInput'])) {
+            $this->array($_SESSION['saveInput'])->notHasKey('Computer');
+        }
+        $computer = $this->getNewComputer();
+        $cid = $computer->fields['id'];
+
+        $result = $computer->update([
+            'id'    => $cid,
+            'comment'  => 'test'
+        ]);
+        $this->boolean($result)->isTrue();
+
+        // Check that there is no savedInput after update
+        if (isset($_SESSION['saveInput']) && is_array($_SESSION['saveInput'])) {
+            $this->array($_SESSION['saveInput'])->notHasKey('Computer');
+        }
     }
 }

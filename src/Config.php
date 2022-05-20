@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,21 +17,23 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Agent\Communication\AbstractRequest;
 use Glpi\Cache\CacheManager;
 use Glpi\Dashboard\Grid;
 use Glpi\Exception\PasswordTooWeakException;
@@ -56,7 +59,12 @@ class Config extends CommonDBTM
 
     public static $rightname              = 'config';
 
-    public static $undisclosedFields      = ['proxy_passwd', 'smtp_passwd', 'glpinetwork_registration_key'];
+    public static $undisclosedFields      = [
+        'proxy_passwd',
+        'smtp_passwd',
+        'glpinetwork_registration_key',
+        'ldap_pass', // this one should not exist anymore, but may be present when admin restored config dump after migration
+    ];
     public static $saferUndisclosedFields = ['admin_email', 'replyto_email'];
 
     public static function getTypeName($nb = 0)
@@ -133,7 +141,7 @@ class Config extends CommonDBTM
             $config_context = $input['config_context'];
             unset($input['id']);
             unset($input['_glpi_csrf_token']);
-            unset($input['update']);
+            unset($input['_update']);
             unset($input['config_context']);
             if (
                 (!empty($input['config_class']))
@@ -261,7 +269,7 @@ class Config extends CommonDBTM
        // Beware : with new management system, we must update each value
         unset($input['id']);
         unset($input['_glpi_csrf_token']);
-        unset($input['update']);
+        unset($input['_update']);
 
        // Add skipMaintenance if maintenance mode update
         if (isset($input['maintenance_mode']) && $input['maintenance_mode']) {
@@ -275,6 +283,11 @@ class Config extends CommonDBTM
                 false,
                 WARNING
             );
+        }
+
+        // Automatically trim whitespaces around registration key.
+        if (array_key_exists('glpinetwork_registration_key', $input) && !empty($input['glpinetwork_registration_key'])) {
+            $input['glpinetwork_registration_key'] = trim($input['glpinetwork_registration_key']);
         }
 
         $this->setConfigurationValues('core', $input);
@@ -633,7 +646,19 @@ class Config extends CommonDBTM
 
         echo "<input type='hidden' name='_update_devices_in_menu' value='1'>";
         echo "</td>";
-        echo "</tr>\n";
+
+        echo "<td><label for='dropdown_inventory_frequency$rand'>" . __('Inventory frequency (in hours)') .
+            "</label></td><td>";
+        Dropdown::showNumber(
+            "inventory_frequency",
+            [
+                'value' => $CFG_GLPI['inventory_frequency'],
+                'min' => 1,
+                'max' => 240,
+                'rand' => $rand
+            ]
+        );
+        echo "</td></tr>\n";
 
         echo "</table>";
 
@@ -1590,7 +1615,8 @@ class Config extends CommonDBTM
              "</td><td>";
             Grid::dropdownDashboard("default_dashboard_mini_ticket", [
                 'value' => $data['default_dashboard_mini_ticket'],
-                'display_emptychoice' => true
+                'display_emptychoice' => true,
+                'context'   => 'mini_core',
             ]);
             echo "</td></tr>";
         }
@@ -2018,7 +2044,7 @@ class Config extends CommonDBTM
         echo wordwrap($msg . "\n", $p['word_wrap_width'], "\n\t");
 
         if (isset($_SERVER["HTTP_USER_AGENT"])) {
-            echo "\t" . Sanitizer::sanitize($_SERVER["HTTP_USER_AGENT"], false) . "\n";
+            echo "\t" . Sanitizer::encodeHtmlSpecialChars($_SERVER["HTTP_USER_AGENT"]) . "\n";
         }
 
         foreach ($DB->getInfo() as $key => $val) {
@@ -2249,8 +2275,9 @@ HTML;
                 'version' => SIMPLEPIE_VERSION,
                 'check'   => $sp
             ],
-            [ 'name'    => 'mpdf/mpdf',
-                'check'   => 'Mpdf\\Mpdf'
+            [ 'name'      => 'tecnickcom/tcpdf',
+                'version' => TCPDF_STATIC::getTCPDFVersion(),
+                'check'   => 'TCPDF'
             ],
             [ 'name'    => 'michelf/php-markdown',
                 'check'   => 'Michelf\\Markdown'
@@ -2348,6 +2375,10 @@ HTML;
             [ 'name'    => 'html2text/html2text',
                 'check'   => 'Html2Text\\Html2Text'
             ],
+            [
+                'name'    => 'symfony/css-selector',
+                'check'   => 'Symfony\\Component\\CssSelector\\CssSelectorConverter'
+            ],
             [ 'name'    => 'symfony/dom-crawler',
                 'check'   => 'Symfony\\Component\\DomCrawler\\Crawler'
             ],
@@ -2368,6 +2399,10 @@ HTML;
             ],
             [ 'name'    => 'symfony/polyfill-php80',
                 'check'   => 'str_contains'
+            ],
+            [
+                'name'  => 'symfony/polyfill-php81',
+                'check' => 'array_is_list'
             ],
         ];
         if (Toolbox::canUseCAS()) {
@@ -2479,33 +2514,66 @@ HTML;
 
     public static function detectRootDoc()
     {
-        global $CFG_GLPI;
+        global $DB, $CFG_GLPI;
 
-        if (!isset($CFG_GLPI["root_doc"])) {
-            if (!isset($_SERVER['REQUEST_URI'])) {
-                $_SERVER['REQUEST_URI'] = $_SERVER['PHP_SELF'];
-            }
+        if (isset($CFG_GLPI['root_doc'])) {
+            return; // already computed
+        }
 
-            $currentdir = getcwd();
-            chdir(GLPI_ROOT);
-            $glpidir    = str_replace(
-                str_replace('\\', '/', getcwd()),
-                "",
-                str_replace('\\', '/', $currentdir)
+        if (isset($_SERVER['REQUEST_URI'])) {
+            // $_SERVER['REQUEST_URI'] is set, meaning that GLPI is accessed from web server.
+            // In this case, `$CFG_GLPI['root_doc']` corresponds to the piece of URI
+            // that is common between `GLPI_ROOT` and $_SERVER['REQUEST_URI']
+            // e.g. GLPI_ROOT=/var/www/glpi and $_SERVER['REQUEST_URI']=/glpi/front/index.php -> $CFG_GLPI['root_doc']=/glpi
+
+            // Extract relative path of entry script directory
+            // e.g. /var/www/mydomain.org/glpi/front/index.php -> /front
+            $current_dir_relative = str_replace(
+                str_replace(DIRECTORY_SEPARATOR, '/', realpath(GLPI_ROOT)),
+                '',
+                str_replace(DIRECTORY_SEPARATOR, '/', realpath(getcwd()))
             );
-            chdir($currentdir);
-            $globaldir  = Html::cleanParametersURL($_SERVER['REQUEST_URI']);
-            $globaldir  = preg_replace("/\/[0-9a-zA-Z\.\-\_]+\.php/", "", $globaldir);
 
-           // api exception
-            if (strpos($globaldir, 'api/') !== false) {
-                 $globaldir = preg_replace("/(.*\/)api\/.*/", "$1", $globaldir);
+            // Extract relative path of request URI directory
+            // e.g. /glpi/front/index.php -> /glpi/front
+            $request_dir_relative = preg_replace(
+                '/\/[0-9a-zA-Z\.\-\_]+\.php/',
+                '',
+                Html::cleanParametersURL($_SERVER['REQUEST_URI'])
+            );
+            // API exception (handles `RewriteRule api/(.*)$ apirest.php/$1`)
+            if (strpos($request_dir_relative, 'api/') !== false) {
+                $request_dir_relative = preg_replace("/(.*\/)api\/.*/", "$1", $request_dir_relative);
             }
 
-            $CFG_GLPI["root_doc"] = str_replace($glpidir, "", $globaldir);
-            $CFG_GLPI["root_doc"] = preg_replace("/\/$/", "", $CFG_GLPI["root_doc"]);
-           // urldecode for space redirect to encoded URL : change entity
-            $CFG_GLPI["root_doc"] = urldecode($CFG_GLPI["root_doc"]);
+            // Remove relative path of entry script directory
+            // e.g. /glpi/front -> /glpi
+            $root_doc = str_replace($current_dir_relative, '', $request_dir_relative);
+            $root_doc = rtrim($root_doc, '/');
+
+            // urldecode for space redirect to encoded URL : change entity
+            // note: not sure this line is actually used
+            $root_doc = urldecode($root_doc);
+
+            $CFG_GLPI['root_doc'] = $root_doc;
+        } else {
+            // $_SERVER['REQUEST_URI'] is not set, meaning that GLPI is probably acces from CLI.
+            // In this case, `$CFG_GLPI['root_doc']` has to be extracted from `$CFG_GLPI['url_base']`.
+
+            $url_base = $CFG_GLPI['url_base'] ?? null;
+            // $CFG_GLPI may have not been loaded yet, load value form DB if `$CFG_GLPI['url_base']` is not set.
+            if ($url_base === null && $DB instanceof DBmysql && $DB->connected) {
+                $url_base = Config::getConfigurationValue('core', 'url_base');
+            }
+
+            if ($url_base !== null) {
+                $CFG_GLPI['root_doc'] = parse_url($url_base, PHP_URL_PATH) ?? '';
+            }
+        }
+
+        // Path for icon of document type (web mode only)
+        if (isset($CFG_GLPI['root_doc'])) {
+            $CFG_GLPI['typedoc_icon_dir'] = $CFG_GLPI['root_doc'] . '/pics/icones';
         }
     }
 
@@ -2682,22 +2750,24 @@ HTML;
         }
         $message = $error > 0 ? $ko_message : $ok_message;
 
-        $img = "<img src='" . $CFG_GLPI['root_doc'] . "/pics/";
-        $img .= ($error > 0 ? "ko_min" : "ok_min") . ".png' alt='$message' title='$message'/>";
-
         if (isCommandLine()) {
             echo $message . "\n";
-        } else if ($fordebug) {
-            echo $img . $message . "\n";
         } else {
-            $html = "<td";
-            if ($error > 0) {
-                $html .= " class='red'";
+            $img = "<img src='" . $CFG_GLPI['root_doc'] . "/pics/";
+            $img .= ($error > 0 ? "ko_min" : "ok_min") . ".png' alt='$message' title='$message'/>";
+
+            if ($fordebug) {
+                echo $img . $message . "\n";
+            } else {
+                $html = "<td";
+                if ($error > 0) {
+                    $html .= " class='red'";
+                }
+                $html .= ">";
+                $html .= $img;
+                $html .= '</td>';
+                echo $html;
             }
-            $html .= ">";
-            $html .= $img;
-            $html .= '</td>';
-            echo $html;
         }
         return $error;
     }
@@ -2944,7 +3014,7 @@ HTML;
     /**
      * Load legacy configuration into $CFG_GLPI global variable.
      *
-     * @return boolean True for success, false if an error occured
+     * @return boolean True for success, false if an error occurred
      *
      * @since 10.0.0 Parameter $older_to_latest is not longer used.
      */
@@ -2997,11 +3067,6 @@ HTML;
             $prof->getFromDB($CFG_GLPI['lock_lockprofile_id']);
             $prof->cleanProfile();
             $CFG_GLPI['lock_lockprofile'] = $prof->fields;
-        }
-
-       // Path for icon of document type (web mode only)
-        if (isset($CFG_GLPI['root_doc'])) {
-            $CFG_GLPI['typedoc_icon_dir'] = $CFG_GLPI['root_doc'] . '/pics/icones';
         }
 
         if (isset($CFG_GLPI['planning_work_days'])) {
@@ -3735,6 +3800,11 @@ HTML;
         if ($safer) {
             $excludedKeys = array_flip(self::$saferUndisclosedFields);
             $safe_config = array_diff_key($safe_config, $excludedKeys);
+        }
+
+        // override with session values
+        foreach ($safe_config as $key => &$value) {
+            $value = $_SESSION['glpi' . $key] ?? $value;
         }
 
         return $safe_config;

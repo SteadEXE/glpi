@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -37,13 +39,6 @@ use Toolbox;
 
 class APIXmlrpc extends API
 {
-    protected $request_uri;
-    protected $url_elements;
-    protected $verb;
-    protected $parameters;
-    protected $debug = 0;
-    protected $format = "json";
-
     public static $content_type = "application/xml";
 
     public static function getTypeName($nb = 0)
@@ -66,11 +61,13 @@ class APIXmlrpc extends API
      *  - Identifier
      *  - and parameters
      *
-     *  And send to method corresponding identified resource
+     * And send to method corresponding identified resource
+     *
+     * Then send response to client.
      *
      * @since 9.1
      *
-     * @return mixed xmlrpc response
+     * @return void xmlrpc response
      */
     public function call()
     {
@@ -86,32 +83,32 @@ class APIXmlrpc extends API
 
         if ($resource === "initSession") {
             $this->session_write = true;
-            return $this->returnResponse($this->initSession($this->parameters));
+            $this->returnResponse($this->initSession($this->parameters));
         } else if ($resource === "killSession") { // logout from glpi
             $this->session_write = true;
-            return $this->returnResponse($this->killSession());
+            $this->returnResponse($this->killSession());
         } else if ($resource === "changeActiveEntities") { // change active entities
             $this->session_write = true;
-            return $this->returnResponse($this->changeActiveEntities($this->parameters));
+            $this->returnResponse($this->changeActiveEntities($this->parameters));
         } else if ($resource === "getMyEntities") { // get all entities of logged user
-            return $this->returnResponse($this->getMyEntities($this->parameters));
+            $this->returnResponse($this->getMyEntities($this->parameters));
         } else if ($resource === "getActiveEntities") { // get curent active entity
-            return $this->returnResponse($this->getActiveEntities($this->parameters));
+            $this->returnResponse($this->getActiveEntities($this->parameters));
         } else if ($resource === "changeActiveProfile") { // change active profile
             $this->session_write = true;
-            return $this->returnResponse($this->changeActiveProfile($this->parameters));
+            $this->returnResponse($this->changeActiveProfile($this->parameters));
         } else if ($resource === "getMyProfiles") { // get all profiles of current logged user
-            return $this->returnResponse($this->getMyProfiles($this->parameters));
+            $this->returnResponse($this->getMyProfiles($this->parameters));
         } else if ($resource === "getActiveProfile") { // get current active profile
-            return $this->returnResponse($this->getActiveProfile($this->parameters));
+            $this->returnResponse($this->getActiveProfile($this->parameters));
         } else if ($resource === "getFullSession") { // get complete php session
-            return $this->returnResponse($this->getFullSession($this->parameters));
+            $this->returnResponse($this->getFullSession($this->parameters));
         } else if ($resource === "getGlpiConfig") { // get complete php var $CFG_GLPI
-            return $this->returnResponse($this->getGlpiConfig($this->parameters));
+            $this->returnResponse($this->getGlpiConfig($this->parameters));
         } else if ($resource === "getMultipleItems") { // get multiple items (with various itemtype)
-            return $this->returnResponse($this->getMultipleItems($this->parameters));
+            $this->returnResponse($this->getMultipleItems($this->parameters));
         } else if ($resource === "listSearchOptions") { // list searchOptions of an itemtype
-            return $this->returnResponse($this->listSearchOptions(
+            $this->returnResponse($this->listSearchOptions(
                 $this->parameters['itemtype'],
                 $this->parameters
             ));
@@ -134,9 +131,9 @@ class APIXmlrpc extends API
                 $code = 206; // partial content
             }
 
-            return $this->returnResponse($response, $code, $additionalheaders);
+            $this->returnResponse($response, $code, $additionalheaders);
         } else if ($resource === "lostPassword") {
-            return $this->returnResponse($this->lostPassword($this->parameters), 204);
+            $this->returnResponse($this->lostPassword($this->parameters));
         } else if (
             in_array(
                 $resource,
@@ -171,7 +168,7 @@ class APIXmlrpc extends API
                     $datemod = strtotime($response['date_mod']);
                     $additionalheaders['Last-Modified'] = gmdate("D, d M Y H:i:s", $datemod) . " GMT";
                 }
-                return $this->returnResponse($response, 200, $additionalheaders);
+                $this->returnResponse($response, 200, $additionalheaders);
             } else if ($resource === "getItems") { // get a collection of a CommonDBTM item
                // return collection of items
                 $totalcount = 0;
@@ -200,7 +197,7 @@ class APIXmlrpc extends API
                     $additionalheaders["Content-Range"] = implode('-', $range) . "/" . $totalcount;
                 }
 
-                return $this->returnResponse($response, $code, $additionalheaders);
+                $this->returnResponse($response, $code, $additionalheaders);
             } else if ($resource === "createItems") { // create one or many CommonDBTM items
                 $response = $this->createItems($this->parameters['itemtype'], $this->parameters);
 
@@ -220,9 +217,9 @@ class APIXmlrpc extends API
                   // remove last comma
                     $additionalheaders['link'] = trim($additionalheaders['link'], ",");
                 }
-                return $this->returnResponse($response, 201);
+                $this->returnResponse($response, 201);
             } else if ($resource === "updateItems") { // update one or many CommonDBTM items
-                return $this->returnResponse($this->updateItems(
+                $this->returnResponse($this->updateItems(
                     $this->parameters['itemtype'],
                     $this->parameters
                 ));
@@ -232,7 +229,7 @@ class APIXmlrpc extends API
                     $this->parameters['input'] = new \stdClass();
                     $this->parameters['input']->id = $this->parameters['id'];
                 }
-                return $this->returnResponse(
+                $this->returnResponse(
                     $this->deleteItems(
                         $this->parameters['itemtype'],
                         $this->parameters

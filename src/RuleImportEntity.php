@@ -2,13 +2,15 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2010-2022 by the FusionInventory Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +18,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -54,7 +57,7 @@ class RuleImportEntity extends Rule
     public function maxActionsCount()
     {
        // Unlimited
-        return 4;
+        return 5;
     }
 
     public function executeActions($output, $params, array $input = [])
@@ -174,11 +177,6 @@ class RuleImportEntity extends Rule
     }
 
 
-    /**
-     * @since 0.84
-     *
-     * @see Rule::getAdditionalCriteriaDisplayPattern()
-     **/
     public function getAdditionalCriteriaDisplayPattern($ID, $condition, $pattern)
     {
 
@@ -194,6 +192,7 @@ class RuleImportEntity extends Rule
             }
             return $name;
         }
+        return false;
     }
 
     /**
@@ -292,18 +291,6 @@ class RuleImportEntity extends Rule
     }
 
 
-    /**
-     * Process the rule
-     *
-     * @param array &$input the input data used to check criterias
-     * @param array &$output the initial ouput array used to be manipulate by actions
-     * @param array &$params parameters for all internal functions
-     * @param array &options array options:
-     *                     - only_criteria : only react on specific criteria
-     *
-     * @return array the output updated by actions.
-     *         If rule matched add field _rule_process to return value
-     */
     public function process(&$input, &$output, &$params, &$options = [])
     {
 

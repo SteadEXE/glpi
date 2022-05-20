@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -37,6 +39,7 @@ use Glpi\ContentTemplates\ParametersPreset;
 use Glpi\ContentTemplates\TemplateManager;
 use Glpi\Event;
 use Glpi\RichText\RichText;
+use Glpi\Toolbox\Sanitizer;
 
 /**
  * Ticket Class
@@ -295,6 +298,25 @@ class Ticket extends CommonITILObject
                     case 'status':
                         if (!self::isAllowedStatus($this->fields['status'], $value)) {
                             return false;
+                        }
+                        break;
+                    case 'itilcategories_id':
+                        $cat = new ITILCategory();
+                        if ($cat->getFromDB($value)) {
+                            switch ($this->fields['type']) {
+                                case self::INCIDENT_TYPE:
+                                    if (!$cat->fields['is_incident']) {
+                                        return false;
+                                    }
+                                    break;
+                                case self::DEMAND_TYPE:
+                                    if (!$cat->fields['is_request']) {
+                                        return false;
+                                    }
+                                    break;
+                                default:
+                                    break;
+                            }
                         }
                         break;
                 }
@@ -1574,9 +1596,6 @@ class Ticket extends CommonITILObject
 
         parent::post_updateItem($history);
 
-       //Action for send_validation rule : do validation before clean
-        $this->manageValidationAdd($this->input);
-
        // Put same status on duplicated tickets when solving or closing (autoclose on solve)
         if (
             isset($this->input['status'])
@@ -1702,10 +1721,7 @@ class Ticket extends CommonITILObject
             && (mt_rand(1, 100) <= $rate)
         ) {
             // For reopened ticket
-            if ($inquest->getFromDB($this->fields['id'])) {
-                $resp = $inquest->fields;
-                $inquest->delete($resp);
-            }
+            $inquest->delete(['tickets_id' => $this->fields['id']]);
 
             $inquest->add(
                 [
@@ -1801,18 +1817,6 @@ class Ticket extends CommonITILObject
             if (isset($input[$olaField]) && ($input[$olaField] > 0)) {
                 $manual_olas_id[$slmType] = $input[$olaField];
             }
-        }
-
-       // fill auto-assign when no tech defined (only for tech)
-        if (
-            !isset($input['_auto_import'])
-            && (!isset($input['_skip_auto_assign']) || $input['_skip_auto_assign'] === false)
-            && isset($_SESSION['glpiset_default_tech']) && $_SESSION['glpiset_default_tech']
-            && Session::getCurrentInterface() == 'central'
-            && (!isset($input['_users_id_assign']) || $input['_users_id_assign'] == 0)
-            && Session::haveRight("ticket", Ticket::OWN)
-        ) {
-            $input['_users_id_assign'] = Session::getLoginUserID();
         }
 
         $cat_id = $input['itilcategories_id'] ?? 0;
@@ -1959,8 +1963,6 @@ class Ticket extends CommonITILObject
     public function post_addItem()
     {
         global $CFG_GLPI;
-
-        $this->manageValidationAdd($this->input);
 
        // Log this event
         $username = 'anonymous';
@@ -2153,205 +2155,6 @@ class Ticket extends CommonITILObject
                 )
             ));
         }
-    }
-
-
-    /**
-     * Manage Validation add from input
-     *
-     * @since 0.85
-     *
-     * @param $input array : input array
-     *
-     * @return boolean
-     **/
-    public function manageValidationAdd($input)
-    {
-
-       //Action for send_validation rule
-        if (isset($input["_add_validation"])) {
-            if (isset($input['entities_id'])) {
-                $entid = $input['entities_id'];
-            } else if (isset($this->fields['entities_id'])) {
-                $entid = $this->fields['entities_id'];
-            } else {
-                return false;
-            }
-
-            $validations_to_send = [];
-            if (!is_array($input["_add_validation"])) {
-                $input["_add_validation"] = [$input["_add_validation"]];
-            }
-
-            foreach ($input["_add_validation"] as $key => $validation) {
-                switch ($validation) {
-                    case 'requester_supervisor':
-                        if (
-                            isset($input['_groups_id_requester'])
-                            && $input['_groups_id_requester']
-                        ) {
-                            $users = Group_User::getGroupUsers(
-                                $input['_groups_id_requester'],
-                                ['is_manager' => 1]
-                            );
-                            foreach ($users as $data) {
-                                 $validations_to_send[] = $data['id'];
-                            }
-                        }
-                        // Add to already set groups
-                        foreach ($this->getGroups(CommonITILActor::REQUESTER) as $d) {
-                            $users = Group_User::getGroupUsers(
-                                $d['groups_id'],
-                                ['is_manager' => 1]
-                            );
-                            foreach ($users as $data) {
-                                $validations_to_send[] = $data['id'];
-                            }
-                        }
-                        break;
-
-                    case 'assign_supervisor':
-                        if (
-                            isset($input['_groups_id_assign'])
-                            && $input['_groups_id_assign']
-                        ) {
-                            $users = Group_User::getGroupUsers(
-                                $input['_groups_id_assign'],
-                                ['is_manager' => 1]
-                            );
-                            foreach ($users as $data) {
-                                $validations_to_send[] = $data['id'];
-                            }
-                        }
-                        foreach ($this->getGroups(CommonITILActor::ASSIGN) as $d) {
-                            $users = Group_User::getGroupUsers(
-                                $d['groups_id'],
-                                ['is_manager' => 1]
-                            );
-                            foreach ($users as $data) {
-                                 $validations_to_send[] = $data['id'];
-                            }
-                        }
-                        break;
-
-                    case 'requester_responsible':
-                        if (isset($input['_users_id_requester'])) {
-                            if (is_array($input['_users_id_requester'])) {
-                                foreach ($input['_users_id_requester'] as $users_id) {
-                                    $user = new User();
-                                    if ($user->getFromDB($users_id)) {
-                                          $validations_to_send[] = $user->getField('users_id_supervisor');
-                                    }
-                                }
-                            } else {
-                                $user = new User();
-                                if ($user->getFromDB($input['_users_id_requester'])) {
-                                     $validations_to_send[] = $user->getField('users_id_supervisor');
-                                }
-                            }
-                        }
-                        break;
-
-                    default:
-                       // Group case from rules
-                        if ($key === 'group') {
-                            foreach ($validation as $groups_id) {
-                                 $validation_right = 'validate_incident';
-                                if (
-                                    isset($input['type'])
-                                     && ($input['type'] == Ticket::DEMAND_TYPE)
-                                ) {
-                                    $validation_right = 'validate_request';
-                                }
-                                $opt = ['groups_id' => $groups_id,
-                                    'right'     => $validation_right,
-                                    'entity'    => $entid
-                                ];
-
-                                $data_users = TicketValidation::getGroupUserHaveRights($opt);
-
-                                foreach ($data_users as $user) {
-                                    $validations_to_send[] = $user['id'];
-                                }
-                            }
-                        } else {
-                            $validations_to_send[] = $validation;
-                        }
-                }
-            }
-
-           // Validation user added on ticket form
-            if (isset($input['users_id_validate'])) {
-                if (array_key_exists('groups_id', $input['users_id_validate'])) {
-                    foreach ($input['users_id_validate'] as $key => $validation_to_add) {
-                        if (is_numeric($key)) {
-                            $validations_to_send[] = $validation_to_add;
-                        }
-                    }
-                } else {
-                    foreach ($input['users_id_validate'] as $key => $validation_to_add) {
-                        if (is_numeric($key)) {
-                             $validations_to_send[] = $validation_to_add;
-                        }
-                    }
-                }
-            }
-
-           // Keep only one
-            $validations_to_send = array_unique($validations_to_send);
-
-            $validation          = new TicketValidation();
-
-            if (count($validations_to_send)) {
-                $values                = [];
-                $values['tickets_id']  = $this->fields['id'];
-                if (isset($input['id']) && $input['id'] != $this->fields['id']) {
-                    $values['_ticket_add'] = true;
-                }
-
-               // to know update by rules
-                if (isset($input["_rule_process"])) {
-                    $values['_rule_process'] = $input["_rule_process"];
-                }
-               // if auto_import, tranfert it for validation
-                if (isset($input['_auto_import'])) {
-                    $values['_auto_import'] = $input['_auto_import'];
-                }
-
-               // Cron or rule process of hability to do
-                if (
-                    Session::isCron()
-                    || isset($input["_auto_import"])
-                    || isset($input["_rule_process"])
-                    || $validation->can(-1, CREATE, $values)
-                ) { // cron or allowed user
-                    $add_done = false;
-                    foreach ($validations_to_send as $user) {
-                       // Do not auto add twice same validation
-                        if (!TicketValidation::alreadyExists($values['tickets_id'], $user)) {
-                             $values["users_id_validate"] = $user;
-                            if ($validation->add($values)) {
-                                $add_done = true;
-                            }
-                        }
-                    }
-                    if ($add_done) {
-                        Event::log(
-                            $this->fields['id'],
-                            "ticket",
-                            4,
-                            "tracking",
-                            sprintf(
-                                __('%1$s updates the item %2$s'),
-                                $_SESSION["glpiname"],
-                                $this->fields['id']
-                            )
-                        );
-                    }
-                }
-            }
-        }
-        return true;
     }
 
 
@@ -3185,7 +2988,7 @@ JAVASCRIPT;
             'datatype'           => 'datetime',
             'maybefuture'        => true,
             'massiveaction'      => false,
-            'additionalfields'   => ['status']
+            'additionalfields'   => ['date', 'status', 'takeintoaccount_delay_stat']
         ];
 
         $tab[] = [
@@ -3216,7 +3019,7 @@ JAVASCRIPT;
             'datatype'           => 'datetime',
             'maybefuture'        => true,
             'massiveaction'      => false,
-            'additionalfields'   => ['status']
+            'additionalfields'   => ['solvedate', 'status']
         ];
 
         $tab[] = [
@@ -3247,7 +3050,7 @@ JAVASCRIPT;
             'datatype'           => 'datetime',
             'maybefuture'        => true,
             'massiveaction'      => false,
-            'additionalfields'   => ['status']
+            'additionalfields'   => ['date', 'status', 'takeintoaccount_delay_stat'],
         ];
 
         $tab[] = [
@@ -4180,7 +3983,9 @@ JAVASCRIPT;
             $options['itilcategories_id'],
             $_SESSION["glpiactive_entity"]
         );
-        $options['_tickettemplate'] = $tt;
+
+        // override current fields in options with template fields and return the array of these predefined fields
+        $predefined_fields = $this->setPredefinedFields($tt, $options, $default_values);
 
         $delegating = User::getDelegateGroupsForUser($options['entities_id']);
 
@@ -4199,6 +4004,7 @@ JAVASCRIPT;
             'itiltemplate_key'        => self::getTemplateFormFieldName(),
             'itiltemplate'            => $tt,
             'delegating'              => $delegating,
+            'predefined_fields'       => Toolbox::prepareArrayForInput($predefined_fields),
         ]);
     }
 
@@ -4367,14 +4173,13 @@ JAVASCRIPT;
             '_filename'                 => [],
             '_tag_filename'             => [],
             '_actors'                   => [],
+            '_contracts_id'             => 0,
         ];
     }
 
 
     public function showForm($ID, array $options = [])
     {
-        global $PLUGIN_HOOKS;
-
        // show full create form only to tech users
         if ($ID <= 0 && Session::getCurrentInterface() !== "central") {
             return;
@@ -4388,16 +4193,16 @@ JAVASCRIPT;
 
         $default_values = self::getDefaultValues();
 
-       // Restore saved value or override with page parameter
-        $saved = $this->restoreInput();
+        // Restore saved value or override with page parameter
+        $options['_saved'] = $this->restoreInput();
 
-       // Restore saved values and override $this->fields
-        $this->restoreSavedValues($saved);
+        // Restore saved values and override $this->fields
+        $this->restoreSavedValues($options['_saved']);
 
         foreach ($default_values as $name => $value) {
             if (!isset($options[$name])) {
-                if (isset($saved[$name])) {
-                    $options[$name] = $saved[$name];
+                if (isset($options['_saved'][$name])) {
+                    $options[$name] = $options['_saved'][$name];
                 } else {
                     $options[$name] = $value;
                 }
@@ -4420,7 +4225,7 @@ JAVASCRIPT;
         }
 
         if (!$ID) {
-           // Override defaut values from projecttask if needed
+            // Override defaut values from projecttask if needed
             if (isset($options['_projecttasks_id'])) {
                 $pt = new ProjectTask();
                 if ($pt->getFromDB($options['_projecttasks_id'])) {
@@ -4428,7 +4233,7 @@ JAVASCRIPT;
                     $options['content'] = $pt->getField('name');
                 }
             }
-           // Override defaut values from followup if needed
+            // Override defaut values from followup if needed
             if (isset($options['_promoted_fup_id']) && !$options['_skip_promoted_fields']) {
                 $fup = new ITILFollowup();
                 if ($fup->getFromDB($options['_promoted_fup_id'])) {
@@ -4439,17 +4244,17 @@ JAVASCRIPT;
                         'tickets_id_2' => $fup->fields['items_id']
                     ];
 
-                  // Set entity from parent
+                    // Set entity from parent
                     $parent_itemtype = $fup->getField('itemtype');
                     $parent = new $parent_itemtype();
                     if ($parent->getFromDB($fup->getField('items_id'))) {
                         $options['entities_id'] = $parent->getField('entities_id');
                     }
                 }
-              //Allow overriding the default values
+               //Allow overriding the default values
                 $options['_skip_promoted_fields'] = true;
             }
-           // Override defaut values from task if needed
+            // Override defaut values from task if needed
             if (isset($options['_promoted_task_id']) && !$options['_skip_promoted_fields']) {
                 $tickettask = new TicketTask();
                 if ($tickettask->getFromDB($options['_promoted_task_id'])) {
@@ -4462,18 +4267,18 @@ JAVASCRIPT;
                         'tickets_id_2' => $tickettask->fields['tickets_id']
                     ];
 
-                   // Set entity from parent
+                    // Set entity from parent
                     $parent = new Ticket();
                     if ($parent->getFromDB($tickettask->getField('tickets_id'))) {
                         $options['entities_id'] = $parent->getField('entities_id');
                     }
                 }
-               //Allow overriding the default values
+                //Allow overriding the default values
                 $options['_skip_promoted_fields'] = true;
             }
         }
 
-       // Check category / type validity
+        // Check category / type validity
         if ($options['itilcategories_id']) {
             $cat = new ITILCategory();
             if ($cat->getFromDB($options['itilcategories_id'])) {
@@ -4496,27 +4301,28 @@ JAVASCRIPT;
             }
         }
 
-       // Default check
+        // Default check
         if ($ID > 0) {
             $this->check($ID, READ);
         } else {
-           // Create item
+            // Create item
             $this->check(-1, CREATE, $options);
         }
 
         $userentities = [];
         if (!$ID) {
-            $userentities         = $this->getEntitiesForRequesters($options);
+            $userentities = $this->getEntitiesForRequesters($options);
 
             if (
                 count($userentities) > 0
                 && !in_array($this->fields["entities_id"], $userentities)
             ) {
-               // If entity is not in the list of user's entities,
-               // then use as default value the first value of the user's entites list
-                $this->fields["entities_id"] = $userentities[0];
-               // Pass to values
-                $options['entities_id']       = $userentities[0];
+                // If entity is not in the list of user's entities,
+                // then use as default value the first value of the user's entites list
+                $first_entity = current($userentities);
+                $this->fields["entities_id"] = $first_entity;
+                // Pass to values
+                $options['entities_id']      = $first_entity;
             }
         }
 
@@ -4529,10 +4335,6 @@ JAVASCRIPT;
             );
         }
 
-        if (!isset($options['template_preview'])) {
-            $options['template_preview'] = 0;
-        }
-
         if (!isset($options['_promoted_fup_id'])) {
             $options['_promoted_fup_id'] = 0;
         }
@@ -4543,68 +4345,16 @@ JAVASCRIPT;
 
        // Load template if available :
         $tt = $this->getITILTemplateToUse(
-            $options['template_preview'],
+            $options['template_preview'] ?? 0,
             $this->fields['type'],
             ($ID ? $this->fields['itilcategories_id'] : $options['itilcategories_id']),
             ($ID ? $this->fields['entities_id'] : $options['entities_id'])
         );
 
-       // Predefined fields from template : reset them
-        if (isset($options['_predefined_fields'])) {
-            $options['_predefined_fields']
-                        = Toolbox::decodeArrayFromInput($options['_predefined_fields']);
-        } else {
-            $options['_predefined_fields'] = [];
-        }
+        // override current fields in options with template fields and return the array of these predefined fields
+        $predefined_fields = $this->setPredefinedFields($tt, $options, $default_values);
 
-       // Store predefined fields to be able not to take into account on change template
-       // Only manage predefined values on ticket creation
-        $predefined_fields = [];
-        $tpl_key = $this->getTemplateFormFieldName();
-        if (!$ID) {
-            if (isset($tt->predefined) && count($tt->predefined)) {
-                foreach ($tt->predefined as $predeffield => $predefvalue) {
-                    if (isset($default_values[$predeffield])) {
-                      // Is always default value : not set
-                      // Set if already predefined field
-                      // Set if ticket template change
-                        if (
-                            ((count($options['_predefined_fields']) == 0)
-                            && ($options[$predeffield] == $default_values[$predeffield]))
-                            || (isset($options['_predefined_fields'][$predeffield])
-                            && ($options[$predeffield] == $options['_predefined_fields'][$predeffield]))
-                            || (isset($options[$tpl_key])
-                            && ($options[$tpl_key] != $tt->getID()))
-                            // user pref for requestype can't overwrite requestype from template
-                            // when change category
-                            || (($predeffield == 'requesttypes_id')
-                            && empty($saved))
-                        ) {
-                             // Load template data
-                             $options[$predeffield]            = $predefvalue;
-                             $this->fields[$predeffield]      = $predefvalue;
-                             $predefined_fields[$predeffield] = $predefvalue;
-                        }
-                    }
-                }
-               // All predefined override : add option to say predifined exists
-                if (count($predefined_fields) == 0) {
-                    $predefined_fields['_all_predefined_override'] = 1;
-                }
-            } else { // No template load : reset predefined values
-                if (count($options['_predefined_fields'])) {
-                    foreach ($options['_predefined_fields'] as $predeffield => $predefvalue) {
-                        if ($options[$predeffield] == $predefvalue) {
-                            $options[$predeffield] = $default_values[$predeffield];
-                        }
-                    }
-                }
-            }
-        }
-       // Put ticket template on $options for actors
-        $options[str_replace('s_id', '', $tpl_key)] = $tt;
-
-       // check right used for this ticket
+        // check right used for this ticket
         $canupdate     = !$ID
                         || (Session::getCurrentInterface() == "central"
                             && $this->canUpdateItem());
@@ -4617,15 +4367,6 @@ JAVASCRIPT;
             $canupdate = false;
             // No update for actors
             $options['_noupdate'] = true;
-        }
-
-        if ($options['template_preview']) {
-           // Add all values to fields of tickets for template preview
-            foreach ($options as $key => $val) {
-                if (!isset($this->fields[$key])) {
-                    $this->fields[$key] = $val;
-                }
-            }
         }
 
         $sla = new SLA();
@@ -4642,8 +4383,9 @@ JAVASCRIPT;
             'timeline_itemtypes' => $this->getTimelineItemtypes(),
             'legacy_timeline_actions'  => $this->getLegacyTimelineActionsHTML(),
             'params'             => $options,
+            'entities_id'        => $ID ? $this->fields['entities_id'] : $options['entities_id'],
             'timeline'           => $this->getTimelineItems(),
-            'itiltemplate_key'   => $tpl_key,
+            'itiltemplate_key'   => self::getTemplateFormFieldName(),
             'itiltemplate'       => $tt,
             'predefined_fields'  => Toolbox::prepareArrayForInput($predefined_fields),
             'ticket_ticket'      => new Ticket_Ticket(),
@@ -6489,8 +6231,7 @@ JAVASCRIPT;
         if (isset($this->fields['slas_id_ttr']) && $this->fields['slas_id_ttr'] > 0) {
             $sla = new SLA();
             if ($sla->getFromDB($this->fields['slas_id_ttr'])) {
-                // not -1: calendar of the entity
-                if ($sla->getField('calendars_id') >= 0) {
+                if (!$sla->fields['use_ticket_calendar']) {
                     return $sla->getField('calendars_id');
                 }
             }
@@ -6538,17 +6279,17 @@ JAVASCRIPT;
     public function showStatsDates()
     {
         $now                      = time();
-        $date_creation            = strtotime($this->fields['date']);
+        $date_creation            = strtotime($this->fields['date'] ?? '');
         $date_takeintoaccount     = $date_creation + $this->fields['takeintoaccount_delay_stat'];
         if ($date_takeintoaccount == $date_creation) {
             $date_takeintoaccount  = 0;
         }
-        $internal_time_to_own     = strtotime($this->fields['internal_time_to_own']);
-        $time_to_own              = strtotime($this->fields['time_to_own']);
-        $internal_time_to_resolve = strtotime($this->fields['internal_time_to_resolve']);
-        $time_to_resolve          = strtotime($this->fields['time_to_resolve']);
-        $solvedate                = strtotime($this->fields['solvedate']);
-        $closedate                = strtotime($this->fields['closedate']);
+        $internal_time_to_own     = strtotime($this->fields['internal_time_to_own'] ?? '');
+        $time_to_own              = strtotime($this->fields['time_to_own'] ?? '');
+        $internal_time_to_resolve = strtotime($this->fields['internal_time_to_resolve'] ?? '');
+        $time_to_resolve          = strtotime($this->fields['time_to_resolve'] ?? '');
+        $solvedate                = strtotime($this->fields['solvedate'] ?? '');
+        $closedate                = strtotime($this->fields['closedate'] ?? '');
         $goal_takeintoaccount     = ($date_takeintoaccount > 0 ? $date_takeintoaccount : $now);
         $goal_solvedate           = ($solvedate > 0 ? $solvedate : $now);
 
@@ -6865,7 +6606,7 @@ JAVASCRIPT;
                     $input = [
                         'itemtype'        => 'Ticket',
                         'items_id'        => $merge_target_id,
-                        'content'         => $DB->escape($ticket->fields['name'] . "<br /><br />" . $ticket->fields['content']),
+                        'content'         => $DB->escape($ticket->fields['name'] . Sanitizer::encodeHtmlSpecialChars("<br /><br />") . $ticket->fields['content']),
                         'users_id'        => $ticket->fields['users_id_recipient'],
                         'date_creation'   => $ticket->fields['date_creation'],
                         'date_mod'        => $ticket->fields['date_mod'],

@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -658,6 +660,7 @@ class Planning extends CommonGLPI
                 'license_key'  => $scheduler_key,
                 'resources'    => self::getTimelineResources(),
                 'now'          => date("Y-m-d H:i:s"),
+                'can_create'   => PlanningExternalEvent::canCreate(),
             ];
         } else {
            // short view (on Central page)
@@ -673,7 +676,7 @@ class Planning extends CommonGLPI
         }
 
        // display planning (and call js from js/planning.js)
-        echo "<div id='planning$rand'></div>";
+        echo "<div id='planning$rand' class='flex-fill'></div>";
         echo "</div>";
 
         echo Html::scriptBlock("$(function() {
@@ -934,6 +937,7 @@ class Planning extends CommonGLPI
         $actor = explode('_', $filter_key);
         $uID = 0;
         $gID = 0;
+        $expanded = '';
         if ($filter_data['type'] == 'user') {
             $uID = $actor[1];
             $user = new User();
@@ -943,6 +947,18 @@ class Planning extends CommonGLPI
             $group = new Group();
             $group->getFromDB($actor[1]);
             $title = $group->getName();
+            $enabled = $disabled = 0;
+            foreach ($filter_data['users'] as $user) {
+                if ($user['display']) {
+                    $enabled++;
+                } else {
+                    $disabled++;
+                    $filter_data['display'] = false;
+                }
+            }
+            if ($enabled > 0 && $disabled > 0) {
+                $expanded = ' expanded';
+            }
         } else if ($filter_data['type'] == 'group') {
             $gID = $actor[1];
             $group = new Group();
@@ -967,7 +983,7 @@ class Planning extends CommonGLPI
 
         echo "<li event_type='" . $filter_data['type'] . "'
                event_name='$filter_key'
-               class='" . $filter_data['type'] . "'>";
+               class='" . $filter_data['type'] . $expanded . "'>";
         Html::showCheckbox([
             'name'          => 'filters[]',
             'value'         => $filter_key,
@@ -1254,7 +1270,10 @@ class Planning extends CommonGLPI
     {
         if (!$params['itemtype'] instanceof CommonDBTM) {
             echo "<div class='center'>";
-            echo "<a href='" . $params['url'] . "'>" . __("View this item in his context") . "</a>";
+            echo "<a href='" . $params['url'] . "' class='btn btn-outline-secondary'>" .
+                "<i class='ti ti-eye'></i>" .
+                "<span>" . __("View this item in his context") . "</span>" .
+            "</a>";
             echo "</div>";
             echo "<hr>";
             $rand = mt_rand();

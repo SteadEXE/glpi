@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,22 +17,24 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
 use Glpi\Application\View\TemplateRenderer;
+use Glpi\Event;
 use Glpi\Plugin\Hooks;
 use Glpi\RichText\RichText;
 use Glpi\Team\Team;
@@ -160,7 +163,97 @@ abstract class CommonITILObject extends CommonDBTM
         $actortypestring = self::getActorFieldNameType($actortype);
 
         if ($this->isNewItem()) {
-           // existing actors (from a form reload)
+            // load default user from preference only at the first load of new ticket form
+            // we don't want to trigger it on form reload
+            // at first load, the key _skip_default_actor is not present (can only be present after a submit)
+            if (!isset($params['_skip_default_actor'])) {
+                $users_id_default = $this->getDefaultActor($actortype);
+                if ($users_id_default > 0) {
+                    $userobj  = new User();
+                    if ($userobj->getFromDB($users_id_default)) {
+                        $name = formatUserName(
+                            $userobj->fields["id"],
+                            $userobj->fields["name"],
+                            $userobj->fields["realname"],
+                            $userobj->fields["firstname"]
+                        );
+                        $email = UserEmail::getDefaultForUser($users_id_default);
+                        $actors[] = [
+                            'items_id'          => $users_id_default,
+                            'itemtype'          => 'User',
+                            'text'              => $name,
+                            'title'             => $name,
+                            'use_notification'  => strlen($email) > 0,
+                            'alternative_email' => $email,
+                        ];
+                    }
+                }
+            }
+
+            // load default actors from itiltemplate passed from showForm in `params` var
+            // we find this key on the first load of template (when opening form)
+            // or when the template change (by category loading)
+            if (isset($params['_template_changed'])) {
+                $users_id = (int) ($params['_predefined_fields']['_users_id_' . $actortypestring] ?? 0);
+                if ($users_id > 0) {
+                    $userobj  = new User();
+                    if ($userobj->getFromDB($users_id)) {
+                        $name = formatUserName(
+                            $userobj->fields["id"],
+                            $userobj->fields["name"],
+                            $userobj->fields["realname"],
+                            $userobj->fields["firstname"]
+                        );
+                        $email = UserEmail::getDefaultForUser($users_id);
+                        $actors[] = [
+                            'items_id'          => $users_id,
+                            'itemtype'          => 'User',
+                            'text'              => $name,
+                            'title'             => $name,
+                            'use_notification'  => strlen($email) > 0,
+                            'alternative_email' => $email,
+                        ];
+                    }
+                }
+
+                $groups_id = (int) ($params['_predefined_fields']['_groups_id_' . $actortypestring] ?? 0);
+                if ($groups_id > 0) {
+                    $group_obj = new Group();
+                    if ($group_obj->getFromDB($groups_id)) {
+                        $actors[] = [
+                            'items_id' => $group_obj->fields['id'],
+                            'itemtype' => 'Group',
+                            'text'     => $group_obj->getName(),
+                            'title'    => $group_obj->getRawCompleteName(),
+                        ];
+                    }
+                }
+
+                $suppliers_id = (int) ($params['_predefined_fields']['_suppliers_id_' . $actortypestring] ?? 0);
+                if ($suppliers_id > 0) {
+                    $supplier_obj = new Supplier();
+                    if ($supplier_obj->getFromDB($suppliers_id)) {
+                        $actors[] = [
+                            'items_id'          => $supplier_obj->fields['id'],
+                            'itemtype'          => 'Supplier',
+                            'text'              => $supplier_obj->fields['name'],
+                            'title'             => $supplier_obj->fields['name'],
+                            'use_notification'  => strlen($supplier_obj->fields['email']) > 0,
+                            'alternative_email' => $supplier_obj->fields['email'],
+                        ];
+                    }
+                }
+            }
+
+            // if we load any actor from _itemtype_actortype_id, we are loading template,
+            // and so we don't want more actors.
+            // if any actor exists and was absent in a field from template, it will be loaded by the POST data.
+            // we choose to erase existing actors for any defined in the template.
+            if (count($actors)) {
+                return $actors;
+            }
+
+            // existing actors (from a form reload)
             if (isset($params['_actors'])) {
                 foreach ($params['_actors'] as $existing_actortype => $existing_actors) {
                     if ($existing_actortype != $actortypestring) {
@@ -186,57 +279,20 @@ abstract class CommonITILObject extends CommonDBTM
                                 'text'  => $name,
                                 'title' => $completename,
                             ];
+                        } elseif (
+                            $actor_obj instanceof User
+                            && $existing_actor['items_id'] == 0
+                            && strlen($existing_actor['alternative_email']) > 0
+                        ) {
+                            // direct mail actor
+                            $actors[] = $existing_actor + [
+                                'text'  => $existing_actor['alternative_email'],
+                                'title' => $existing_actor['alternative_email'],
+                            ];
                         }
                     }
                 }
                 return $actors;
-            }
-
-           // load default actors from itiltemplate passed from showForm in `params` var
-           // for user actor, we load firstly from template, else default actor
-            $users_id = ($params['_users_id_' . $actortypestring] ?? false) ?: $this->getDefaultActor($actortype);
-            $userobj  = new User();
-            if ($userobj->getFromDB($users_id)) {
-                $name = formatUserName(
-                    $userobj->fields["id"],
-                    $userobj->fields["name"],
-                    $userobj->fields["realname"],
-                    $userobj->fields["firstname"]
-                );
-                $email = UserEmail::getDefaultForUser($users_id);
-                $actors[] = [
-                    'items_id'          => $users_id,
-                    'itemtype'          => 'User',
-                    'text'              => $name,
-                    'title'             => $name,
-                    'use_notification'  => strlen($email) > 0,
-                    'alternative_email' => $email,
-                ];
-            }
-
-            if (isset($params['_groups_id_' . $actortypestring]) && $params['_groups_id_' . $actortypestring] > 0) {
-                $group_obj = new Group();
-                if ($group_obj->getFromDB($params['_groups_id_' . $actortypestring])) {
-                    $actors[] = [
-                        'items_id' => $group_obj->fields['groups_id'],
-                        'itemtype' => 'Group',
-                        'text'     => $group_obj->getName(),
-                        'title'    => $group_obj->getRawCompleteName(),
-                    ];
-                }
-            }
-            if (isset($params['_suppliers_id_' . $actortypestring]) && $params['_suppliers_id_' . $actortypestring] > 0) {
-                $supplier_obj = new Supplier();
-                if ($supplier_obj->getFromDB($params['_suppliers_id_' . $actortypestring])) {
-                    $actors[] = [
-                        'items_id'          => $supplier_obj->fields['id'],
-                        'itemtype'          => 'Supplier',
-                        'text'              => $supplier_obj->fields['name'],
-                        'title'             => $supplier_obj->fields['name'],
-                        'use_notification'  => strlen($supplier_obj->fields['email']) > 0,
-                        'alternative_email' => $supplier_obj->fields['email'],
-                    ];
-                }
             }
         }
 
@@ -289,6 +345,235 @@ abstract class CommonITILObject extends CommonDBTM
 
 
     /**
+     * @param $ID
+     * @param $options   array
+     **/
+    public function showForm($ID, array $options = [])
+    {
+        if (!static::canView()) {
+            return false;
+        }
+
+        $default_values = static::getDefaultValues();
+
+        // Restore saved value or override with page parameter
+        $options['_saved'] = $this->restoreInput();
+
+        // Restore saved values and override $this->fields
+        $this->restoreSavedValues($options['_saved']);
+
+        // Set default options
+        if (!$ID) {
+            foreach ($default_values as $key => $val) {
+                if (!isset($options[$key])) {
+                    if (isset($options['_saved'][$key])) {
+                        $options[$key] = $options['_saved'][$key];
+                    } else {
+                        $options[$key] = $val;
+                    }
+                }
+            }
+        }
+
+        $this->initForm($ID, $options);
+
+        $canupdate = !$ID || (Session::getCurrentInterface() == "central" && $this->canUpdateItem());
+
+        if ($ID && in_array($this->fields['status'], $this->getClosedStatusArray())) {
+            $canupdate = false;
+            // No update for actors
+            $options['_noupdate'] = true;
+        }
+
+        if (!$this->isNewItem()) {
+            $options['formtitle'] = sprintf(
+                __('%1$s - ID %2$d'),
+                $this->getTypeName(1),
+                $ID
+            );
+            //set ID as already defined
+            $options['noid'] = true;
+        }
+
+        $type = null;
+        if (is_a($this, Ticket::class)) {
+            $type = ($ID ? $this->fields['type'] : $options['type']);
+        }
+        // Load template if available
+        $tt = $this->getITILTemplateToUse(
+            $options['template_preview'] ?? 0,
+            $type,
+            ($ID ? $this->fields['itilcategories_id'] : $options['itilcategories_id']),
+            ($ID ? $this->fields['entities_id'] : $options['entities_id'])
+        );
+
+        $predefined_fields = $this->setPredefinedFields($tt, $options, $default_values);
+
+        TemplateRenderer::getInstance()->display('components/itilobject/layout.html.twig', [
+            'item'                    => $this,
+            'timeline_itemtypes'      => $this->getTimelineItemtypes(),
+            'legacy_timeline_actions' => $this->getLegacyTimelineActionsHTML(),
+            'params'                  => $options,
+            'entities_id'             => $ID ? $this->fields['entities_id'] : $options['entities_id'],
+            'timeline'                => $this->getTimelineItems(),
+            'itiltemplate_key'        => static::getTemplateFormFieldName(),
+            'itiltemplate'            => $tt,
+            'predefined_fields'       => Toolbox::prepareArrayForInput($predefined_fields),
+            'canupdate'               => $canupdate,
+            'canpriority'             => $canupdate,
+            'canassign'               => $canupdate,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Return an array of predefined fields from provided template
+     * Append also data to $options param (passed by reference) :
+     *  - if we transform a ticket (form change and problem) or a problem (for change) override with its field
+     *  - override form fields from template (ex: if content field is set in template, content field in option will be overriden)
+     *  - if template changed (provided template doesn't match the one found in options), append a key _template_changed in $options
+     *  - finally, append templates_id in options
+     *
+     * @param ITILTemplate $tt The ticket template to use
+     * @param array $options The current options array (PASSED BY REFERENCE)
+     * @param array $default_values The default values to use in case they are not predefined
+     * @return array An array of the predefined values
+     */
+    protected function setPredefinedFields(ITILTemplate $tt, array &$options, array $default_values): array
+    {
+        // Predefined fields from template : reset them
+        if (isset($options['_predefined_fields'])) {
+            $options['_predefined_fields'] = Toolbox::decodeArrayFromInput($options['_predefined_fields']);
+        } else {
+            $options['_predefined_fields'] = [];
+        }
+        if (!isset($options['_hidden_fields'])) {
+            $options['_hidden_fields'] = [];
+        }
+
+        // check original ticket for change and problem
+        $tickets_id = $options['tickets_id'] ?? $options['_tickets_id'] ?? null;
+        $ticket = new Ticket();
+        $ticket->getEmpty();
+        if (in_array($this->getType(), ['Change', 'Problem']) && $tickets_id) {
+            $ticket->getFromDB($tickets_id);
+
+            $options['content']             = $ticket->fields['content'];
+            $options['name']                = $ticket->fields['name'];
+            $options['impact']              = $ticket->fields['impact'];
+            $options['urgency']             = $ticket->fields['urgency'];
+            $options['priority']            = $ticket->fields['priority'];
+            if (isset($options['tickets_id'])) {
+                //page is reloaded on category change, we only want category on the very first load
+                $category = new ITILCategory();
+                $category->getFromDB($ticket->fields['itilcategories_id']);
+                $options['itilcategories_id'] = $category->fields['is_change'] ? $ticket->fields['itilcategories_id'] : 0;
+            }
+            $options['time_to_resolve']     = $ticket->fields['time_to_resolve'];
+            $options['entities_id']         = $ticket->fields['entities_id'];
+        }
+
+        // check original problem for change
+        $problems_id = $options['problems_id'] ?? $options['_problems_id'] ?? null;
+        $problem = new Problem();
+        $problem->getEmpty();
+        if ($this->getType() == "Change" && $problems_id) {
+            $problem->getFromDB($problems_id);
+
+            $options['content']             = $problem->fields['content'];
+            $options['name']                = $problem->fields['name'];
+            $options['impact']              = $problem->fields['impact'];
+            $options['urgency']             = $problem->fields['urgency'];
+            $options['priority']            = $problem->fields['priority'];
+            if (isset($options['problems_id'])) {
+                //page is reloaded on category change, we only want category on the very first load
+                $options['itilcategories_id'] = $problem->fields['itilcategories_id'];
+            }
+            $options['time_to_resolve']     = $problem->fields['time_to_resolve'];
+            $options['entities_id']         = $problem->fields['entities_id'];
+        }
+
+        // Store predefined fields to be able not to take into account on change template
+        $predefined_fields = [];
+        $tpl_key = static::getTemplateFormFieldName();
+
+        if ($this->isNewItem()) {
+            if (isset($tt->predefined) && count($tt->predefined)) {
+                foreach ($tt->predefined as $predeffield => $predefvalue) {
+                    if (isset($options[$predeffield]) && isset($default_values[$predeffield])) {
+                        // Is always default value : not set
+                        // Set if already predefined field
+                        // Set if ticket template change
+                        if (
+                            ((count($options['_predefined_fields']) == 0)
+                                && ($options[$predeffield] == $default_values[$predeffield]))
+                            || (isset($options['_predefined_fields'][$predeffield])
+                                && ($options[$predeffield] == $options['_predefined_fields'][$predeffield]))
+                            || (isset($options[$tpl_key])
+                                && ($options[$tpl_key] != $tt->getID()))
+
+                            // user pref for requestype can't overwrite requestype from template
+                            // when change category
+                            || ($predeffield == 'requesttypes_id'
+                                && empty(($options['_saved'] ?? [])))
+
+                            // tests specificic for change & problem
+                            || ($tickets_id != null
+                                && $options[$predeffield] == $ticket->fields[$predeffield])
+                            || ($problems_id != null
+                                && $options[$predeffield] == $problem->fields[$predeffield])
+                        ) {
+                            $options[$predeffield]           = $predefvalue;
+                            $predefined_fields[$predeffield] = $predefvalue;
+                            $this->fields[$predeffield]      = $predefvalue;
+                        }
+                    } else { // Not defined options set as hidden field
+                        $options['_hidden_fields'][$predeffield] = $predefvalue;
+                    }
+                }
+                // All predefined override : add option to say predifined exists
+                if (count($predefined_fields) == 0) {
+                    $predefined_fields['_all_predefined_override'] = 1;
+                }
+            } else { // No template load : reset predefined values
+                if (count($options['_predefined_fields'])) {
+                    foreach ($options['_predefined_fields'] as $predeffield => $predefvalue) {
+                        if ($options[$predeffield] == $predefvalue) {
+                            $options[$predeffield] = $default_values[$predeffield];
+                        }
+                    }
+                }
+            }
+        }
+        // append to options to know later we added predefined values
+        // we may need this especially for actors
+        if (count($predefined_fields)) {
+            $options['_predefined_fields'] = $predefined_fields;
+        }
+
+        // check if we load the default template (when openning form for example) or the template changed
+        if (!isset($options[$tpl_key]) || $options[$tpl_key] != $tt->getId()) {
+            $options['_template_changed'] = true;
+        }
+
+        // Put ticket template id on $options for actors
+        $options[str_replace('s_id', '', $tpl_key)] = $tt->getId();
+
+        // Add all values to fields of tickets for template preview
+        if (($options['template_preview'] ?? false)) {
+            foreach ($options as $key => $val) {
+                if (!isset($this->fields[$key])) {
+                    $this->fields[$key] = $val;
+                }
+            }
+        }
+
+        return $predefined_fields;
+    }
+
+
+    /**
      * Retrieve all possible entities for an itilobject posted data.
      * We try to retrieve requesters in the data:
      * - from `_users_id_requester` (data from template or default actor)
@@ -319,6 +604,8 @@ abstract class CommonITILObject extends CommonDBTM
             $user_entities = Profile_User::getUserEntities($users_id, true, true);
             $entities = array_intersect($entities, $user_entities);
         }
+
+        $entities = array_values($entities); // Ensure keys are starting at 0
 
         return $entities;
     }
@@ -448,6 +735,30 @@ abstract class CommonITILObject extends CommonDBTM
          )
          || $this->isValidator(Session::getLoginUserID())
         );
+    }
+
+
+    /**
+     * Do the current ItilObject need to be reopened by a requester answer
+     *
+     * @since 10.0.1
+     *
+     * @return boolean
+     */
+    public function needReopen(): bool
+    {
+        $my_id    = Session::getLoginUserID();
+        $my_groups = $_SESSION["glpigroups"] ?? [];
+
+        $ami_requester       = $this->isUser(CommonITILActor::REQUESTER, $my_id);
+        $ami_requester_group = $this->isGroup(CommonITILActor::REQUESTER, $my_groups);
+
+        $ami_assignee        = $this->isUser(CommonITILActor::ASSIGN, $my_id);
+        $ami_assignee_group  = $this->isGroup(CommonITILActor::ASSIGN, $my_groups);
+
+        return in_array($this->fields["status"], static::getReopenableStatusArray())
+            && ($ami_requester || $ami_requester_group)
+            && !($ami_assignee || $ami_assignee_group);
     }
 
     /**
@@ -1032,6 +1343,7 @@ abstract class CommonITILObject extends CommonDBTM
                // Manage assign and steal right
                 if (static::getType() === Ticket::getType() && Session::haveRightsOr(static::$rightname, [Ticket::ASSIGN, Ticket::STEAL])) {
                     $allowed_fields[] = '_itil_assign';
+                    $allowed_fields[] = '_actors'; // This will be filtered in CommonITILObject::updateActors()
                 }
 
                // Can only update initial fields if no followup or task already added
@@ -1479,6 +1791,9 @@ abstract class CommonITILObject extends CommonDBTM
 
        // handle actors changes
         $this->updateActors();
+
+        // Send validation requests
+        $this->manageValidationAdd($this->input);
 
         parent::post_updateItem();
     }
@@ -1952,15 +2267,6 @@ abstract class CommonITILObject extends CommonDBTM
             $input['users_id_lastupdater'] = $last_updater;
         }
 
-       // No Auto set Import for external source
-        if (!isset($input['_auto_import'])) {
-            if (!isset($input["_users_id_requester"])) {
-                if ($uid = Session::getLoginUserID()) {
-                    $input["_users_id_requester"] = $uid;
-                }
-            }
-        }
-
         if (!isset($input['_skip_auto_assign']) || $input['_skip_auto_assign'] === false) {
            // No Auto set Import for external source
             if (
@@ -2226,7 +2532,7 @@ abstract class CommonITILObject extends CommonDBTM
         }
 
        // handle actors changes
-        $this->updateActors();
+        $this->updateActors(true);
 
         $useractors = null;
        // Add user groups linked to ITIL objects
@@ -2242,14 +2548,15 @@ abstract class CommonITILObject extends CommonDBTM
             $supplieractors = new $this->supplierlinkclass();
         }
 
-       // "do not compute" flag set by business rules for "takeintoaccount_delay_stat" field
-        $do_not_compute_takeintoaccount = $this->isTakeIntoAccountComputationBlocked($this->input);
+        $common_actor_input = [
+            '_do_not_compute_takeintoaccount' => $this->isTakeIntoAccountComputationBlocked($this->input),
+            '_from_object'                    => true,
+            '_disablenotif'                   => true,
+        ];
 
         if (!is_null($useractors)) {
-            $user_input = [
+            $user_input = $common_actor_input + [
                 $useractors->getItilObjectForeignKey() => $this->fields['id'],
-                '_do_not_compute_takeintoaccount'      => $do_not_compute_takeintoaccount,
-                '_from_object'                         => true,
             ];
 
             if (isset($this->input["_users_id_requester"])) {
@@ -2383,10 +2690,8 @@ abstract class CommonITILObject extends CommonDBTM
         }
 
         if (!is_null($groupactors)) {
-            $group_input = [
+            $group_input = $common_actor_input + [
                 $groupactors->getItilObjectForeignKey() => $this->fields['id'],
-                '_do_not_compute_takeintoaccount'       => $do_not_compute_takeintoaccount,
-                '_from_object'                          => true,
             ];
 
             if (isset($this->input["_groups_id_requester"])) {
@@ -2446,10 +2751,8 @@ abstract class CommonITILObject extends CommonDBTM
         }
 
         if (!is_null($supplieractors)) {
-            $supplier_input = [
+            $supplier_input = $common_actor_input + [
                 $supplieractors->getItilObjectForeignKey() => $this->fields['id'],
-                '_do_not_compute_takeintoaccount'          => $do_not_compute_takeintoaccount,
-                '_from_object'                             => true,
             ];
 
             if (
@@ -2497,7 +2800,10 @@ abstract class CommonITILObject extends CommonDBTM
         }
 
        // Additional actors
-        $this->addAdditionalActors($this->input);
+        $this->addAdditionalActors($this->input, true);
+
+        // Send validation requests
+        $this->manageValidationAdd($this->input);
 
         parent::post_addItem();
     }
@@ -2528,10 +2834,14 @@ abstract class CommonITILObject extends CommonDBTM
     }
 
     /**
-     * @since 0.84
-     * @since 0.85 must have param $input
-     **/
-    private function addAdditionalActors($input)
+     * Add additionnal actors (those that are not added by UI).
+     *
+     * @param array $input
+     * @param bool $disable_notifications
+     *
+     * @return void
+     */
+    private function addAdditionalActors(array $input, bool $disable_notifications = false): void
     {
 
         $useractors = null;
@@ -2548,15 +2858,17 @@ abstract class CommonITILObject extends CommonDBTM
             $supplieractors = new $this->supplierlinkclass();
         }
 
-       // "do not compute" flag set by business rules for "takeintoaccount_delay_stat" field
-        $do_not_compute_takeintoaccount = $this->isTakeIntoAccountComputationBlocked($input);
+        $common_actor_input = [
+            '_do_not_compute_takeintoaccount' => $this->isTakeIntoAccountComputationBlocked($this->input),
+            '_from_object'                    => true,
+        ];
+        if ($disable_notifications) {
+            $common_actor_input['_disablenotif'] = true;
+        }
 
-       // Additional groups actors
+        // Additional groups actors
         if (!is_null($groupactors)) {
-            $group_input = [
-                '_do_not_compute_takeintoaccount'       => $do_not_compute_takeintoaccount,
-                '_from_object'                          => true,
-            ];
+            $group_input = $common_actor_input;
 
            // Requesters
             if (
@@ -2624,10 +2936,8 @@ abstract class CommonITILObject extends CommonDBTM
 
        // Additional suppliers actors
         if (!is_null($supplieractors)) {
-            $supplier_input = [
+            $supplier_input = $common_actor_input + [
                 $supplieractors->getItilObjectForeignKey() => $this->fields['id'],
-                '_do_not_compute_takeintoaccount'          => $do_not_compute_takeintoaccount,
-                '_from_object'                             => true,
             ];
 
            // Assigns
@@ -2653,10 +2963,8 @@ abstract class CommonITILObject extends CommonDBTM
 
        // Additional actors : using default notification parameters
         if (!is_null($useractors)) {
-            $user_input = [
+            $user_input = $common_actor_input + [
                 $useractors->getItilObjectForeignKey() => $this->fields['id'],
-                '_do_not_compute_takeintoaccount'      => $do_not_compute_takeintoaccount,
-                '_from_object'                         => true,
             ];
 
            // Observers : for mailcollector
@@ -2757,6 +3065,7 @@ abstract class CommonITILObject extends CommonDBTM
      **/
     public static function dropdownPriority(array $options = [])
     {
+        global $CFG_GLPI;
 
         $p = [
             'name'      => 'priority',
@@ -2791,11 +3100,89 @@ abstract class CommonITILObject extends CommonDBTM
         ) {
             $values[6] = static::getPriorityName(6);
         }
+
         $values[5] = static::getPriorityName(5);
         $values[4] = static::getPriorityName(4);
         $values[3] = static::getPriorityName(3);
         $values[2] = static::getPriorityName(2);
         $values[1] = static::getPriorityName(1);
+
+        $urgencies = [];
+        if (isset($CFG_GLPI[static::URGENCY_MASK_FIELD])) {
+            if (
+                ($p['showtype'] == 'search')
+                || $CFG_GLPI[static::URGENCY_MASK_FIELD] & (1 << 5)
+            ) {
+                $urgencies[] = 5;
+            }
+            if (
+                ($p['showtype'] == 'search')
+                || $CFG_GLPI[static::URGENCY_MASK_FIELD] & (1 << 4)
+            ) {
+                $urgencies[] = 4;
+            }
+            $urgencies[] = 3;
+            if (
+                ($p['showtype'] == 'search')
+                || $CFG_GLPI[static::URGENCY_MASK_FIELD] & (1 << 2)
+            ) {
+                $urgencies[] = 2;
+            }
+            if (
+                ($p['showtype'] == 'search')
+                || $CFG_GLPI[static::URGENCY_MASK_FIELD] & (1 << 1)
+            ) {
+                $urgencies[] = 1;
+            }
+        }
+        $impacts = [];
+        if (isset($CFG_GLPI[static::IMPACT_MASK_FIELD])) {
+            if (
+                ($p['showtype'] == 'search')
+                || $CFG_GLPI[static::IMPACT_MASK_FIELD] & (1 << 5)
+            ) {
+                $impacts[] = 5;
+            }
+            if (
+                ($p['showtype'] == 'search')
+                || $CFG_GLPI[static::IMPACT_MASK_FIELD] & (1 << 4)
+            ) {
+                $impacts[] = 4;
+            }
+            $impacts[] = 3;
+            if (
+                ($p['showtype'] == 'search')
+                || $CFG_GLPI[static::IMPACT_MASK_FIELD] & (1 << 2)
+            ) {
+                $impacts[] = 2;
+            }
+            if (
+                ($p['showtype'] == 'search')
+                || $CFG_GLPI[static::IMPACT_MASK_FIELD] & (1 << 1)
+            ) {
+                $impacts[] = 1;
+            }
+        }
+
+        $active_priorities = [];
+        foreach ($urgencies as $urgency) {
+            foreach ($impacts as $impact) {
+                if (isset($CFG_GLPI["_matrix_${urgency}_${impact}"])) {
+                    $active_priorities[] = $CFG_GLPI["_matrix_${urgency}_${impact}"];
+                }
+            }
+        }
+        $active_priorities = array_unique($active_priorities);
+        if (count($active_priorities) > 0) {
+            foreach ($values as $priority => $name) {
+                if (!in_array($priority, $active_priorities)) {
+                    if ($p['withmajor'] && $priority == 6) {
+                        continue;
+                    }
+                    unset($values[$priority]);
+                }
+            }
+        }
 
         return Dropdown::showFromArray($p['name'], $values, $p);
     }
@@ -3773,7 +4160,7 @@ abstract class CommonITILObject extends CommonDBTM
             'datatype'           => 'datetime',
             'maybefuture'        => true,
             'massiveaction'      => false,
-            'additionalfields'   => ['status']
+            'additionalfields'   => ['solvedate', 'status']
         ];
 
         $tab[] = [
@@ -3783,7 +4170,7 @@ abstract class CommonITILObject extends CommonDBTM
             'name'               => __('Time to resolve + Progress'),
             'massiveaction'      => false,
             'nosearch'           => true,
-            'additionalfields'   => ['status']
+            'additionalfields'   => ['status'],
         ];
 
         $tab[] = [
@@ -4118,7 +4505,7 @@ abstract class CommonITILObject extends CommonDBTM
         ) {
             $newtab['condition'] = array_merge(
                 $newtab['condition'],
-                ['id' => [$_SESSION['glpigroups']]]
+                ['id' => $_SESSION['glpigroups']]
             );
         }
         $tab[] = $newtab;
@@ -4294,8 +4681,9 @@ abstract class CommonITILObject extends CommonDBTM
                 return 'IF(' . $DB->quoteName($table . '.' . $type) . ' IS NOT NULL
             AND ' . $DB->quoteName($table . '.status') . ' <> ' . self::WAITING . '
             AND (' . $DB->quoteName($table . '.takeintoaccount_delay_stat') . '
-                        > TIME_TO_SEC(TIMEDIFF(' . $DB->quoteName($table . '.' . $type) . ',
-                                               ' . $DB->quoteName($table . '.date') . '))
+                        > TIMESTAMPDIFF(SECOND,
+                                        ' . $DB->quoteName($table . '.date') . ',
+                                        ' . $DB->quoteName($table . '.' . $type) . ')
                  OR (' . $DB->quoteName($table . '.takeintoaccount_delay_stat') . ' = 0
                       AND ' . $DB->quoteName($table . '.' . $type) . ' < NOW())),
             1, 0)';
@@ -4573,7 +4961,14 @@ abstract class CommonITILObject extends CommonDBTM
        // For ticket templates : mandatories
         $key = $this->getTemplateFormFieldName();
         if (isset($options[$key])) {
-            echo $options[$key]->getMandatoryMark("_users_id_" . $typename);
+            $tt = $options[$key];
+            if (is_numeric($options[$key])) {
+                $tt_id = $options[$key];
+                $tt_classname = self::getTemplateClass();
+                $tt = new $tt_classname();
+                $tt->getFromDB($tt_id);
+            }
+            echo $tt->getMandatoryMark("_users_id_" . $typename);
         }
 
         $right = $options["_right"] ?? $this->getDefaultActorRightSearch($type);
@@ -6469,53 +6864,58 @@ abstract class CommonITILObject extends CommonDBTM
         $canadd_document = $canadd_fup || ($this->canAddItem('Document') && !in_array($this->fields["status"], $solved_closed_statuses, true));
         $canadd_solution = $obj_type::canUpdate() && $this->canSolve() && !in_array($this->fields["status"], $solved_statuses, true);
 
-        $validation_class = $obj_type . 'Validation';
-        $canadd_validation = false;
-        if (class_exists($validation_class)) {
-            $validation = new $validation_class();
-            $canadd_validation = $validation->can(-1, CREATE, $tmp) && !in_array($this->fields["status"], $solved_closed_statuses, true);
-        }
+        $validation = $this->getValidationClassInstance();
+        $canadd_validation = $validation !== null
+            && $validation->can(-1, CREATE, $tmp)
+            && !in_array($this->fields["status"], $solved_closed_statuses, true);
 
         $itemtypes = [];
 
-        if ($canadd_fup) {
-            $itemtypes['answer'] = [
-                'type'      => 'ITILFollowup',
-                'class'     => 'ITILFollowup',
-                'icon'      => 'ti ti-message-circle',
-                'label'     => _x('button', 'Answer'),
-                'template'  => 'components/itilobject/timeline/form_followup.html.twig',
-                'item'      => $fup
-            ];
-        }
-        if ($canadd_task) {
-            $itemtypes['task'] = [
-                'type'      => 'ITILTask',
-                'class'     => $task_class,
-                'icon'      => 'ti ti-checkbox',
-                'label'     => _x('button', 'Create a task'),
-                'template'  => 'components/itilobject/timeline/form_task.html.twig',
-                'item'      => $task
-            ];
-        }
-        if ($canadd_solution) {
-            $itemtypes['solution'] = [
-                'type'      => 'ITILSolution',
-                'class'     => 'ITILSolution',
-                'icon'      => 'ti ti-check',
-                'label'     => _x('button', 'Add a solution'),
-                'template'  => 'components/itilobject/timeline/form_solution.html.twig',
-                'item'      => new ITILSolution()
-            ];
-        }
-        if ($canadd_validation) {
+        $itemtypes['answer'] = [
+            'type'          => 'ITILFollowup',
+            'class'         => 'ITILFollowup',
+            'icon'          => 'ti ti-message-circle',
+            'label'         => _x('button', 'Answer'),
+            'template'      => 'components/itilobject/timeline/form_followup.html.twig',
+            'item'          => $fup,
+            'hide_in_menu'  => !$canadd_fup
+        ];
+        $itemtypes['task'] = [
+            'type'          => 'ITILTask',
+            'class'         => $task_class,
+            'icon'          => 'ti ti-checkbox',
+            'label'         => _x('button', 'Create a task'),
+            'template'      => 'components/itilobject/timeline/form_task.html.twig',
+            'item'          => $task,
+            'hide_in_menu'  => !$canadd_task
+        ];
+        $itemtypes['solution'] = [
+            'type'          => 'ITILSolution',
+            'class'         => 'ITILSolution',
+            'icon'          => 'ti ti-check',
+            'label'         => _x('button', 'Add a solution'),
+            'template'      => 'components/itilobject/timeline/form_solution.html.twig',
+            'item'          => new ITILSolution(),
+            'hide_in_menu'  => !$canadd_solution
+        ];
+        $itemtypes['document'] = [
+            'type'          => 'Document_Item',
+            'class'         => Document_Item::class,
+            'icon'          => Document_Item::getIcon(),
+            'label'         => _x('button', 'Add a document'),
+            'template'      => 'components/itilobject/timeline/form_document_item.html.twig',
+            'item'          => new Document_Item(),
+            'hide_in_menu'  => !$canadd_document
+        ];
+        if ($validation !== null) {
             $itemtypes['validation'] = [
-                'type'      => 'ITILValidation',
-                'class'     => $validation_class,
-                'icon'      => 'ti ti-thumb-up',
-                'label'     => _x('button', 'Ask for validation'),
-                'template'  => 'components/itilobject/timeline/form_validation.html.twig',
-                'item'      => $validation
+                'type'          => 'ITILValidation',
+                'class'         => $validation::getType(),
+                'icon'          => 'ti ti-thumb-up',
+                'label'         => _x('button', 'Ask for validation'),
+                'template'      => 'components/itilobject/timeline/form_validation.html.twig',
+                'item'          => $validation,
+                'hide_in_menu'  => !$canadd_validation
             ];
         }
 
@@ -6594,6 +6994,12 @@ abstract class CommonITILObject extends CommonDBTM
         $foreignKey = static::getForeignKeyField();
         $timeline = [];
 
+        if ($this->isNewItem()) {
+            return $timeline;
+        }
+
+        $canupdate_parent = $this->canUpdateItem() && !in_array($this->fields['status'], $this->getClosedStatusArray());
+
        //checks rights
         $restrict_fup = $restrict_task = [];
         if (!$params['expose_private'] && !Session::haveRight("followup", ITILFollowup::SEEPRIVATE)) {
@@ -6634,8 +7040,7 @@ abstract class CommonITILObject extends CommonDBTM
         }
 
        //add followups to timeline
-        $fupClass     = 'ITILFollowup';
-        $followup_obj = new $fupClass();
+        $followup_obj = new ITILFollowup();
         if ($followup_obj->canview() || $params['bypass_rights']) {
             $followups = $followup_obj->find(['items_id'  => $this->getID()] + $restrict_fup, ['date DESC', 'id DESC']);
             foreach ($followups as $followups_id => $followup) {
@@ -6643,7 +7048,7 @@ abstract class CommonITILObject extends CommonDBTM
                 if ($followup_obj->canViewItem()) {
                     $followup['can_edit'] = $followup_obj->canUpdateItem();
                     $timeline["ITILFollowup_" . $followups_id] = [
-                        'type' => $fupClass,
+                        'type' => ITILFollowup::class,
                         'item' => $followup,
                         'itiltype' => 'Followup'
                     ];
@@ -6774,11 +7179,11 @@ abstract class CommonITILObject extends CommonDBTM
                 $item['documents_item_id'] = $document_item['id'];
 
                 $item['timeline_position'] = $document_item['timeline_position'];
+                $item['_can_edit'] = $can_view_documents && $document_obj->canUpdateItem();
+                $item['_can_delete'] = $can_view_documents && $document_obj->canDeleteItem() && $canupdate_parent;
 
                 $timeline_key = $document_item['itemtype'] . "_" . $document_item['items_id'];
                 if ($document_item['itemtype'] == static::getType()) {
-                    $item['_can_edit'] = $can_view_documents && $document_obj->canUpdateItem();
-                    $item['_can_delete'] = $can_view_documents && $document_obj->canDeleteItem();
                   // document associated directly to itilobject
                     $timeline["Document_" . $document_item['documents_id']] = [
                         'type' => 'Document_Item',
@@ -6795,8 +7200,6 @@ abstract class CommonITILObject extends CommonDBTM
                     $sub_document = [
                         'type' => 'Document_Item',
                         'item' => $item,
-                        '_can_edit' => $can_view_documents && $document_obj->canUpdateItem(),
-                        '_can_delete' => $can_view_documents && $document_obj->canDeleteItem(),
                     ];
                     if ($is_image) {
                         $sub_document['_is_image'] = true;
@@ -7707,15 +8110,218 @@ abstract class CommonITILObject extends CommonDBTM
     }
 
     /**
+     * Manage Validation add from input (form and rules)
+     *
+     * @param array $input
+     *
+     * @return boolean
+     */
+    public function manageValidationAdd($input)
+    {
+        $validation = $this->getValidationClassInstance();
+
+        if ($validation === null) {
+            return true;
+        }
+
+        $self_fk = $this->getForeignKeyField();
+
+        //Action for send_validation rule
+        if (isset($input["_add_validation"])) {
+            if (isset($input['entities_id'])) {
+                $entid = $input['entities_id'];
+            } else if (isset($this->fields['entities_id'])) {
+                $entid = $this->fields['entities_id'];
+            } else {
+                return false;
+            }
+
+            $validations_to_send = [];
+            if (!is_array($input["_add_validation"])) {
+                $input["_add_validation"] = [$input["_add_validation"]];
+            }
+
+            foreach ($input["_add_validation"] as $key => $value) {
+                switch ($value) {
+                    case 'requester_supervisor':
+                        if (
+                            isset($input['_groups_id_requester'])
+                            && $input['_groups_id_requester']
+                        ) {
+                            $users = Group_User::getGroupUsers(
+                                $input['_groups_id_requester'],
+                                ['is_manager' => 1]
+                            );
+                            foreach ($users as $data) {
+                                 $validations_to_send[] = $data['id'];
+                            }
+                        }
+                        // Add to already set groups
+                        foreach ($this->getGroups(CommonITILActor::REQUESTER) as $d) {
+                            $users = Group_User::getGroupUsers(
+                                $d['groups_id'],
+                                ['is_manager' => 1]
+                            );
+                            foreach ($users as $data) {
+                                $validations_to_send[] = $data['id'];
+                            }
+                        }
+                        break;
+
+                    case 'assign_supervisor':
+                        if (
+                            isset($input['_groups_id_assign'])
+                            && $input['_groups_id_assign']
+                        ) {
+                            $users = Group_User::getGroupUsers(
+                                $input['_groups_id_assign'],
+                                ['is_manager' => 1]
+                            );
+                            foreach ($users as $data) {
+                                $validations_to_send[] = $data['id'];
+                            }
+                        }
+                        foreach ($this->getGroups(CommonITILActor::ASSIGN) as $d) {
+                            $users = Group_User::getGroupUsers(
+                                $d['groups_id'],
+                                ['is_manager' => 1]
+                            );
+                            foreach ($users as $data) {
+                                 $validations_to_send[] = $data['id'];
+                            }
+                        }
+                        break;
+
+                    case 'requester_responsible':
+                        if (isset($input['_users_id_requester'])) {
+                            if (is_array($input['_users_id_requester'])) {
+                                foreach ($input['_users_id_requester'] as $users_id) {
+                                    $user = new User();
+                                    if ($user->getFromDB($users_id)) {
+                                          $validations_to_send[] = $user->getField('users_id_supervisor');
+                                    }
+                                }
+                            } else {
+                                $user = new User();
+                                if ($user->getFromDB($input['_users_id_requester'])) {
+                                     $validations_to_send[] = $user->getField('users_id_supervisor');
+                                }
+                            }
+                        }
+                        break;
+
+                    default:
+                        // Group case from rules
+                        if ($key === 'group') {
+                            foreach ($value as $groups_id) {
+                                $validation_right = 'validate';
+                                if ($this->getType() === Ticket::class) {
+                                    $validation_right = isset($input['type']) && $input['type'] == Ticket::DEMAND_TYPE
+                                        ? 'validate_request'
+                                        : 'validate_incident';
+                                }
+                                $opt = [
+                                    'groups_id' => $groups_id,
+                                    'right'     => $validation_right,
+                                    'entity'    => $entid
+                                ];
+
+                                $data_users = $validation->getGroupUserHaveRights($opt);
+
+                                foreach ($data_users as $user) {
+                                    $validations_to_send[] = $user['id'];
+                                }
+                            }
+                        } else {
+                            $validations_to_send[] = $value;
+                        }
+                }
+            }
+
+            // Validation user added on ticket form
+            if (isset($input['users_id_validate'])) {
+                if (array_key_exists('groups_id', $input['users_id_validate'])) {
+                    foreach ($input['users_id_validate'] as $key => $validation_to_add) {
+                        if (is_numeric($key)) {
+                            $validations_to_send[] = $validation_to_add;
+                        }
+                    }
+                } else {
+                    foreach ($input['users_id_validate'] as $key => $validation_to_add) {
+                        if (is_numeric($key)) {
+                             $validations_to_send[] = $validation_to_add;
+                        }
+                    }
+                }
+            }
+
+            // Keep only one
+            $validations_to_send = array_unique($validations_to_send);
+
+            if (count($validations_to_send)) {
+                $values            = [];
+                $values[$self_fk]  = $this->fields['id'];
+                if (isset($input['id']) && $input['id'] != $this->fields['id']) {
+                    $values['_itilobject_add'] = true;
+                }
+
+                // to know update by rules
+                if (isset($input["_rule_process"])) {
+                    $values['_rule_process'] = $input["_rule_process"];
+                }
+                // if auto_import, tranfert it for validation
+                if (isset($input['_auto_import'])) {
+                    $values['_auto_import'] = $input['_auto_import'];
+                }
+
+                // Cron or rule process of hability to do
+                if (
+                    Session::isCron()
+                    || isset($input["_auto_import"])
+                    || isset($input["_rule_process"])
+                    || $validation->can(-1, CREATE, $values)
+                ) { // cron or allowed user
+                    $add_done = false;
+                    foreach ($validations_to_send as $user) {
+                        // Do not auto add twice same validation
+                        if (!$validation->alreadyExists($values[$self_fk], $user)) {
+                            $values["users_id_validate"] = $user;
+                            if ($validation->add($values)) {
+                                $add_done = true;
+                            }
+                        }
+                    }
+                    if ($add_done) {
+                        Event::log(
+                            $this->fields['id'],
+                            strtolower($this->getType()),
+                            4,
+                            "tracking",
+                            sprintf(
+                                __('%1$s updates the item %2$s'),
+                                $_SESSION["glpiname"],
+                                $this->fields['id']
+                            )
+                        );
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
      * Manage actors posted by itil form
      * New way to do it with a general array containing all item actors.
      * We compare to old actors (in case of items's update) to know which we need to remove/add/update
+     *
+     * @param bool $disable_notifications
      *
      * @since 10.0.0
      *
      * @return void
      */
-    protected function updateActors()
+    protected function updateActors(bool $disable_notifications = false)
     {
         if (
             !isset($this->input['_actors'])
@@ -7731,6 +8337,13 @@ abstract class CommonITILObject extends CommonDBTM
        // parse posted actors
         foreach ($this->input['_actors'] as $actortype_str => $actors) {
             $actortype = constant("CommonITILActor::" . strtoupper($actortype_str));
+            if ($actortype === CommonITILActor::ASSIGN && !$this->canAssign()) {
+                continue;
+            }
+
+            if ($actortype !== CommonITILActor::ASSIGN && !$this->canUpdateItem()) {
+                continue;
+            }
             $existings = $this->getActorsForType($actortype);
 
             $added   = [];
@@ -7779,23 +8392,74 @@ abstract class CommonITILObject extends CommonDBTM
                     }
                 }
 
-                if ($found === false) {
+
+                if ($existing['itemtype'] === 'User') {
+                    $input_field_name = '_additional_' . $actortype_str . 's';
+                } else {
+                    $type = strtolower($existing['itemtype']::getType());
+                    $input_field_name = '_additional_' . $type . 's_' . $actortype_str . 's';
+                }
+
+                if (
+                    isset($this->input[$input_field_name])
+                    && is_array($this->input[$input_field_name])
+                    &&  count($this->input[$input_field_name])
+                ) {
+                    // Need to check two different formats for the input field
+                    $first_item = reset($this->input[$input_field_name]);
+                    if (!is_array($first_item)) {
+                        // Input field is a simple array of IDs
+                        $input_ids = array_values($this->input[$input_field_name]);
+                    } else {
+                        // Input field is an array of arrays containing foreign keys (Ex: groups_id => 5) and maybe some other data
+                        $input_ids = array_column($this->input[$input_field_name], $existing['itemtype']::getForeignKeyField());
+                    }
+                } else {
+                    $input_ids = [];
+                }
+                if ($found === false && (!in_array($existing['items_id'], $input_ids, false))) {
                     $deleted[] = $existing;
                 }
             }
 
            // update actors
+            $common_actor_input = [
+                '_do_not_compute_takeintoaccount' => $this->isTakeIntoAccountComputationBlocked($this->input),
+                '_from_object'                    => true,
+            ];
+            if ($disable_notifications) {
+                $common_actor_input['_disablenotif'] = true;
+            }
             foreach ($added as $actor) {
                 $actor_obj = $this->getActorObjectForItem($actor['itemtype']);
-                $actor_obj->add($actor + [
+                $actor_obj->add($common_actor_input + $actor + [
                     $actor_obj::$items_id_1 => $this->fields['id'], // ex 'tickets_id' => 1
                     $actor_obj::$items_id_2 => $actor['items_id'],   // ex 'users_id' => 1
                     'type'                  => $actortype,
                 ]);
+                if (
+                    $actortype === CommonITILActor::ASSIGN
+                    && (
+                        (!isset($this->input['status']) && in_array($this->fields['status'], $this->getNewStatusArray()))
+                        || (isset($this->input['status']) && in_array($this->input['status'], $this->getNewStatusArray()))
+                    )
+                    && in_array(self::ASSIGNED, array_keys($this->getAllStatusArray()))
+                    && !$this->isStatusComputationBlocked($this->input)
+                ) {
+                    $self = new static();
+                    $self->update(
+                        [
+                            'id'                              => $this->getID(),
+                            'status'                          => self::ASSIGNED,
+                            '_do_not_compute_takeintoaccount' => $this->isTakeIntoAccountComputationBlocked($this->input),
+                            '_from_assignment'                => true
+                        ]
+                    );
+                }
             }
             foreach ($updated as $actor) {
                 $actor_obj = $this->getActorObjectForItem($actor['itemtype']);
-                $actor_obj->update($actor + [
+                $actor_obj->update($common_actor_input + $actor + [
                     'type' => $actortype
                 ]);
             }
@@ -7894,15 +8558,31 @@ abstract class CommonITILObject extends CommonDBTM
     protected function assign(array $input)
     {
         if (
-            ((isset($input["_users_id_assign"])
-            && ((!is_array($input['_users_id_assign']) &&  $input["_users_id_assign"] > 0)
-               || is_array($input['_users_id_assign']) && count($input['_users_id_assign']) > 0))
-            || (isset($input["_groups_id_assign"])
-            && ((!is_array($input['_groups_id_assign']) && $input["_groups_id_assign"] > 0)
-               || is_array($input['_groups_id_assign']) && count($input['_groups_id_assign']) > 0))
-            || (isset($input["_suppliers_id_assign"])
-            && ((!is_array($input['_suppliers_id_assign']) && $input["_suppliers_id_assign"] > 0)
-               || is_array($input['_suppliers_id_assign']) && count($input['_suppliers_id_assign']) > 0)))
+            (
+                (
+                    isset($input['_actors']['assign'])
+                    && is_array($input['_actors']['assign'])
+                    && count($input['_actors']['assign']) > 0
+                ) || (
+                    isset($input["_users_id_assign"])
+                    && (
+                        (!is_array($input['_users_id_assign']) && $input["_users_id_assign"] > 0)
+                        || is_array($input['_users_id_assign']) && count($input['_users_id_assign']) > 0
+                    )
+                ) || (
+                    isset($input["_groups_id_assign"])
+                    && (
+                        (!is_array($input['_groups_id_assign']) && $input["_groups_id_assign"] > 0)
+                        || is_array($input['_groups_id_assign']) && count($input['_groups_id_assign']) > 0
+                    )
+                ) || (
+                    isset($input["_suppliers_id_assign"])
+                    && (
+                        (!is_array($input['_suppliers_id_assign']) && $input["_suppliers_id_assign"] > 0)
+                        || is_array($input['_suppliers_id_assign']) && count($input['_suppliers_id_assign']) > 0
+                    )
+                )
+            )
             && (in_array($input['status'], $this->getNewStatusArray()))
             && !$this->isStatusComputationBlocked($input)
         ) {
@@ -8160,10 +8840,7 @@ abstract class CommonITILObject extends CommonDBTM
     {
         $itilitem = new static();
 
-        if (
-            ($ID <= 0 && !Project::canView()) ||
-            ($ID > 0 && (!$itilitem->getFromDB($ID) || !$itilitem->canView()))
-        ) {
+        if (($ID > 0 && !$itilitem->getFromDB($ID)) || !$itilitem::canView()) {
             return false;
         }
 

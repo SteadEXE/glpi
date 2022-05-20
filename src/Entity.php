@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -108,6 +110,7 @@ class Entity extends CommonTreeDropdown
             'use_licenses_alert', 'use_certificates_alert',
             'send_licenses_alert_before_delay',
             'send_certificates_alert_before_delay',
+            'certificates_alert_repeat_interval',
             'use_contracts_alert',
             'send_contracts_alert_before_delay',
             'use_reservations_alert', 'use_infocoms_alert',
@@ -329,6 +332,12 @@ class Entity extends CommonTreeDropdown
      **/
     public function prepareInputForUpdate($input)
     {
+        // Force entities_id = NULL for root entity
+        if ($input['id'] == 0) {
+            $input['entities_id'] = null;
+            $input['level']       = 1;
+        }
+
         $input = parent::prepareInputForUpdate($input);
         if ($input === false) {
             return false;
@@ -351,11 +360,6 @@ class Entity extends CommonTreeDropdown
             $input['max_closedate'] = $_SESSION["glpi_currenttime"];
         }
 
-       // Force entities_id = NULL for root entity
-        if ($input['id'] == 0) {
-            $input['entities_id'] = 'NULL';
-            $input['level']       = 1;
-        }
         if (!Session::isCron()) { // Filter input for connected
             $input = $this->checkRightDatas($input);
         }
@@ -2285,7 +2289,7 @@ class Entity extends CommonTreeDropdown
         echo "</td></tr>";
 
         echo "<tr class='tab_bg_1'>";
-        echo "<th colspan='2' rowspan='2'>";
+        echo "<th colspan='2' rowspan='3'>";
         echo _n('Certificate', 'Certificates', Session::getPluralNumber());
         echo "</th>";
         echo "<td>" . __('Alarms on expired certificates') . "</td><td>";
@@ -2315,6 +2319,17 @@ class Entity extends CommonTreeDropdown
                 $entity->getField('entities_id')
             );
             self::inheritedValue(self::getSpecificValueToDisplay('send_certificates_alert_before_delay', $tid), true);
+        }
+        echo "</td></tr>";
+        echo "<td>" . __('Reminders frequency for alarms on certificates') . "</td><td>";
+        $default_value = $entity->fields['certificates_alert_repeat_interval'];
+        Alert::dropdown(['name'           => 'certificates_alert_repeat_interval',
+            'value'          => $default_value,
+            'inherit_parent' => (($ID > 0) ? 1 : 0)
+        ]);
+        if ($entity->fields['certificates_alert_repeat_interval'] == self::CONFIG_PARENT) {
+            $tid = self::getUsedConfig('certificates_alert_repeat_interval', $entity->getField('entities_id'));
+            self::inheritedValue(self::getSpecificValueToDisplay('certificates_alert_repeat_interval', $tid), true);
         }
 
         echo "</td></tr>";

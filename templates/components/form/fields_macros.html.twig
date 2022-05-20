@@ -1,12 +1,13 @@
 {#
  # ---------------------------------------------------------------------
+ #
  # GLPI - Gestionnaire Libre de Parc Informatique
- # Copyright (C) 2015-2022 Teclib' and contributors.
  #
  # http://glpi-project.org
  #
- # based on GLPI - Gestionnaire Libre de Parc Informatique
- # Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ # @copyright 2015-2022 Teclib' and contributors.
+ # @copyright 2003-2014 by the INDEPNET Development Team.
+ # @licence   https://www.gnu.org/licenses/gpl-3.0.html
  #
  # ---------------------------------------------------------------------
  #
@@ -14,18 +15,19 @@
  #
  # This file is part of GLPI.
  #
- # GLPI is free software; you can redistribute it and/or modify
+ # This program is free software: you can redistribute it and/or modify
  # it under the terms of the GNU General Public License as published by
- # the Free Software Foundation; either version 2 of the License, or
+ # the Free Software Foundation, either version 3 of the License, or
  # (at your option) any later version.
  #
- # GLPI is distributed in the hope that it will be useful,
+ # This program is distributed in the hope that it will be useful,
  # but WITHOUT ANY WARRANTY; without even the implied warranty of
  # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  # GNU General Public License for more details.
  #
  # You should have received a copy of the GNU General Public License
- # along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ #
  # ---------------------------------------------------------------------
  #}
 
@@ -142,7 +144,7 @@
 
 
 {% macro numberField(name, value, label = '', options = {}) %}
-   {% if options.step|round(0, 'floor') != options.step %}
+   {% if options.step != 'any' and options.step|round(0, 'floor') != options.step %}
       {# Only format number if not a whole number #}
       {% set value = call('Html::formatNumber', [value, true]) %}
    {% endif %}
@@ -200,6 +202,7 @@
       <textarea class="form-control" id="{{ id }}" name="{{ name }}" rows="3"
                 style="width: 100%;"
                 {{ options.disabled ? 'disabled' : '' }}
+                {{ options.readonly ? 'readonly' : '' }}
                 {{ options.required ? 'required' : '' }}>{{ options.enable_richtext ? value|safe_html|escape : value|verbatim_value }}</textarea>
    {% endset %}
 
@@ -213,7 +216,7 @@
    {% endif %}
 
    {% set add_html = '' %}
-   {% if options.enable_fileupload %}
+   {% if not options.readonly and options.enable_fileupload %}
       {% set add_html %}
          {% do call('Html::file', [{
              'editor_id': id,
@@ -222,7 +225,7 @@
              'required': options.fields_template.isMandatoryField('_documents_id')
          }]) %}
       {% endset %}
-   {% elseif not options.enable_fileupload and options.enable_richtext and options.enable_images %}
+   {% elseif not options.readonly and not options.enable_fileupload and options.enable_richtext and options.enable_images %}
       {% set add_html %}
          {% do call('Html::file', [{
              'editor_id': id,
@@ -263,14 +266,25 @@
       {% set options = {'required': true}|merge(options) %}
    {% endif %}
 
+   {% if options.checkIsExpired %}
+      {% if value|date('Y-m-d H:i:s') < "now"|date('Y-m-d H:i:s') %}
+         {% set class = 'warn' %}
+      {% endif %}
+   {% else %}
+      {% set class = '' %}
+   {% endif %}
+
    <div class="input-group flex-grow-1 flatpickr" id="{{ options.id }}">
       {# .rounded-start added to prevent issue with bootstrap .input-group #}
       {# the first element is an input[type=hidden] added by flatpickr and so we don't have border-radius on the start #}
-      <input type="text" class="form-control rounded-start ps-2" data-input
+      <input type="text" class="form-control rounded-start ps-2 {{ class }}" data-input
              name="{{ name }}" value="{{ value|verbatim_value }}"
              {{ options.required ? 'required' : '' }}
+             {{ options.readonly ? 'readonly' : '' }}
              {{ options.disabled ? 'disabled' : '' }} />
-      <i class="input-group-text far fa-calendar-alt" data-toggle role="button"></i>
+      {% if not options.readonly %}
+         <i class="input-group-text far fa-calendar-alt" data-toggle role="button"></i>
+      {% endif %}
    </div>
 {% endmacro %}
 
@@ -290,7 +304,8 @@
             dateFormat: 'Y-m-d',
             enableTime: false,
             weekNumbers: true,
-            allowInput: true,
+            allowInput: {{ options.readonly ? 'false' : 'true' }},
+            clickOpens: {{ options.readonly ? 'false' : 'true' }},
             locale: getFlatPickerLocale("{{ locale['language'] }}", "{{ locale['region'] }}"),
             onClose(dates, currentdatestring, picker) {
                picker.setDate(picker.altInput.value, true, picker.config.altFormat)
@@ -323,7 +338,8 @@
             wrap: true,
             enableSeconds: true,
             weekNumbers: true,
-            allowInput: true,
+            allowInput: {{ options.readonly ? 'false' : 'true' }},
+            clickOpens: {{ options.readonly ? 'false' : 'true' }},
             locale: getFlatPickerLocale('{{ locale['language'] }}', '{{ locale['region'] }}'),
             onClose(dates, currentdatestring, picker) {
                picker.setDate(picker.altInput.value, true, picker.config.altFormat)
@@ -341,7 +357,7 @@
 
 {% macro colorField(name, value, label = '', options = {}) %}
    {% set field %}
-      <input data-jscolor="" id="%id%"
+      <input id="%id%"
              class="form-control"
              name="{{ name }}" value="{{ value|verbatim_value }}"
          {{ options.readonly ? 'readonly' : '' }}
@@ -349,7 +365,11 @@
          {{ options.required ? 'required' : '' }} />
       <script>
       $(function() {
-         jscolor.install();
+        $("#%id%").spectrum({
+            showInput: true,
+            preferredFormat: "hex",
+            type: "text",
+        });
       });
       </script>
    {% endset %}
@@ -378,9 +398,20 @@
    {% set options = {
       'rand': random(),
       'name': name,
+      'simple': false,
    }|merge(options) %}
    {% set field %}
-      {% do call('Html::file', [options]) %}
+      {% if options.simple %}
+        <input type="file" id="%id%"
+               class="form-control"
+               name="{{ name }}"
+               {{ options.mulitple ? 'multiple' : '' }}
+               {{ options.readonly ? 'readonly' : '' }}
+               {{ options.disabled ? 'disabled' : '' }}
+               {{ options.required ? 'required' : '' }} />
+      {% else %}
+        {% do call('Html::file', [options]) %}
+      {% endif %}
    {% endset %}
    {{ _self.field(name, field, label, options) }}
 {% endmacro %}
@@ -598,10 +629,8 @@
       {% set options = options|merge({specific_tags: {'disabled': 'disabled'}}) %}
    {% endif %}
 
-   {% set types = options['types']|default([]) %}
-
    {% set field %}
-      {% do call('Dropdown::showHours', [name, types, {
+      {% do call('Dropdown::showHours', [name, {
          'rand': rand,
          'width': '100%',
          'value': value
@@ -660,7 +689,13 @@
       'is_horizontal': true,
       'include_field': true,
       'add_field_html': '',
+      'locked': false,
+      'locked_fields': [],
    }|merge(options) %}
+
+   {% if name in options.locked_fields %}
+      {% set options = options|merge({'locked': true}) %}
+   {% endif %}
 
    {% if not options.include_field %}
       {{ field }}
@@ -812,6 +847,10 @@
 
 
 {% macro label(label, id, options = {}, class = 'form-label') %}
+    {% set options = {
+        locked: false
+    }|merge(options) %}
+
    {% set required_mark = '' %}
    {% if options.fields_template.isMandatoryField(options.name) or options.required %}
       {% set required_mark = '<span class="required">*</span>' %}
@@ -827,8 +866,18 @@
       {% endset %}
    {% endif %}
 
+   {% set locked_mark = '' %}
+   {% if options.locked %}
+      {% set locked_mark %}
+        <i class="ti ti-lock"
+           title="{{ __('Field will not be updated from inventory') }}"
+           data-bs-toggle="tooltip"></i>
+      {% endset %}
+   {% endif %}
+
    <label class="{{ class }}" for="{{ id }}">
       {{ label|raw }}
+      {{ locked_mark|raw }}
       {{ required_mark|raw }}
       {{ helper|raw }}
    </label>

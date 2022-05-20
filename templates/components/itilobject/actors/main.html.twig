@@ -1,12 +1,13 @@
 {#
  # ---------------------------------------------------------------------
+ #
  # GLPI - Gestionnaire Libre de Parc Informatique
- # Copyright (C) 2015-2022 Teclib' and contributors.
  #
  # http://glpi-project.org
  #
- # based on GLPI - Gestionnaire Libre de Parc Informatique
- # Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ # @copyright 2015-2022 Teclib' and contributors.
+ # @copyright 2003-2014 by the INDEPNET Development Team.
+ # @licence   https://www.gnu.org/licenses/gpl-3.0.html
  #
  # ---------------------------------------------------------------------
  #
@@ -14,18 +15,19 @@
  #
  # This file is part of GLPI.
  #
- # GLPI is free software; you can redistribute it and/or modify
+ # This program is free software: you can redistribute it and/or modify
  # it under the terms of the GNU General Public License as published by
- # the Free Software Foundation; either version 2 of the License, or
+ # the Free Software Foundation, either version 3 of the License, or
  # (at your option) any later version.
  #
- # GLPI is distributed in the hope that it will be useful,
+ # This program is distributed in the hope that it will be useful,
  # but WITHOUT ANY WARRANTY; without even the implied warranty of
  # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  # GNU General Public License for more details.
  #
  # You should have received a copy of the GNU General Public License
- # along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ #
  # ---------------------------------------------------------------------
  #}
 
@@ -46,6 +48,7 @@
 {% if item.isNewItem() %}
    {% set can_admin = true %}
 {% endif %}
+
 {# TODO can_admin is usefull for "assign to me" shortcut #}
 
 {# TODO check allow_email params #}
@@ -56,7 +59,7 @@
          'item': item,
          'actortypeint': constant('CommonITILActor::REQUESTER'),
          'actortype': 'requester',
-         'entities_id': item.fields['entities_id'],
+         'entities_id': entities_id,
          'itiltemplate': itiltemplate,
          'params': params,
          'canupdate': canupdate,
@@ -84,7 +87,7 @@
          'item': item,
          'actortypeint': constant('CommonITILActor::OBSERVER'),
          'actortype': 'observer',
-         'entities_id': item.fields['entities_id'],
+         'entities_id': entities_id,
          'itiltemplate': itiltemplate,
          'params': params,
          'canupdate': canupdate,
@@ -113,7 +116,7 @@
          'actortypeint': constant('CommonITILActor::ASSIGN'),
          'actortype': 'assign',
          'users_right': 'own_ticket',
-         'entities_id': item.fields['entities_id'],
+         'entities_id': entities_id,
          'itiltemplate': itiltemplate,
          'params': params,
          'canupdate': (canupdate or canassign),
@@ -198,9 +201,7 @@
             {
                itemtype: "{{ actor['itemtype'] }}",
                items_id: "{{ actor['items_id'] }}",
-               {% if actor['use_notification'] is defined %}
-                  use_notification: "{{ actor['use_notification'] }}",
-               {% endif %}
+               use_notification: {{ actor['use_notification'] ? "1" : "0" }},
                {% if actor['alternative_email'] is defined %}
                   alternative_email: "{{ actor['alternative_email'] }}",
                {% endif %}

@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -142,6 +144,8 @@ class ITILSolution extends CommonDBChild
             'subitem' => $this,
             'params'  => $options,
         ]);
+
+        return true;
     }
 
     /**
@@ -167,7 +171,7 @@ class ITILSolution extends CommonDBChild
 
     public function prepareInputForAdd($input)
     {
-        if (!isset($input['users_id']) && !(Session::isCron() || strpos($_SERVER['REQUEST_URI'], 'crontask.form.php') !== false)) {
+        if (!isset($input['users_id']) && !(Session::isCron() || strpos($_SERVER['REQUEST_URI'] ?? '', 'crontask.form.php') !== false)) {
             $input['users_id'] = Session::getLoginUserID();
         }
 
@@ -293,7 +297,12 @@ class ITILSolution extends CommonDBChild
             ]
         );
 
-       // Add solution to duplicates
+        // Add documents if needed, without notification
+        $this->input = $this->addFiles($this->input, [
+            'force_update' => true,
+        ]);
+
+        // Add solution to duplicates
         if ($this->item->getType() == 'Ticket' && !isset($this->input['_linked_ticket'])) {
             Ticket_Ticket::manageLinkedTicketsOnSolved($this->item->getID(), $this);
         }
@@ -336,7 +345,7 @@ class ITILSolution extends CommonDBChild
             return false;
         }
 
-        if (isset($input['update']) && ($uid = Session::getLoginUserID())) {
+        if (isset($input['_update']) && ($uid = Session::getLoginUserID())) {
             $input["users_id_editor"] = $uid;
         }
 
@@ -352,6 +361,11 @@ class ITILSolution extends CommonDBChild
             'content_field' => 'content',
         ];
         $this->input = $this->addFiles($this->input, $options);
+
+        // Add documents if needed, without notification
+        $this->input = $this->addFiles($this->input, [
+            'force_update' => true,
+        ]);
 
         parent::post_updateItem($history);
     }

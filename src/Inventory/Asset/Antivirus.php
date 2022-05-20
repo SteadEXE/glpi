@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -66,6 +68,10 @@ class Antivirus extends InventoryAsset
 
             if (!property_exists($val, 'is_active') || empty($val->is_active)) {
                 $val->is_active = 0;
+            }
+
+            if (!property_exists($val, 'is_uptodate') || empty($val->is_uptodate)) {
+                $val->is_uptodate = 0;
             }
 
             $val->is_dynamic = 1;
@@ -119,7 +125,7 @@ class Antivirus extends InventoryAsset
                     $input = (array)$val + [
                         'id'           => $keydb
                     ];
-                    $computerAntivirus->update(Toolbox::addslashes_deep($input), $this->withHistory());
+                    $computerAntivirus->update(Toolbox::addslashes_deep($input));
                     unset($value[$k]);
                     unset($db_antivirus[$keydb]);
                     break;
@@ -139,7 +145,7 @@ class Antivirus extends InventoryAsset
             foreach ($value as $val) {
                 $val->computers_id = $this->item->fields['id'];
                 $val->is_dynamic = 1;
-                $computerAntivirus->add(Toolbox::addslashes_deep((array)$val), [], $this->withHistory());
+                $computerAntivirus->add(Toolbox::addslashes_deep((array)$val));
             }
         }
     }

@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -47,8 +49,8 @@ use Toolbox;
  */
 class Inventory
 {
-    const FULL_MODE = 0;
-    const INCR_MODE = 1;
+    public const FULL_MODE = 0;
+    public const INCR_MODE = 1;
 
     /** @var integer */
     protected $mode;
@@ -70,14 +72,18 @@ class Inventory
     protected $conf;
     /** @var array */
     private $benchs = [];
+    /** @var string|false */
+    private $inventory_tmpfile = false;
     /** @var string */
-    private $inventory_id;
+    private $inventory_content;
     /** @var integer */
     private $inventory_format;
     /** @var InventoryAsset */
     private $mainasset;
     /** @var string */
     private $request_query;
+    /** @var bool */
+    private bool $is_discovery = false;
 
     /**
      * @param mixed   $data   Inventory data, optional
@@ -88,7 +94,6 @@ class Inventory
     {
         $this->mode = $mode;
         $this->conf = new Conf();
-        $this->inventory_id = Toolbox::getRandomString(30);
 
         if (null !== $data) {
             $this->setData($data, $format);
@@ -113,10 +118,9 @@ class Inventory
     public function setData($data, $format = Request::JSON_MODE): bool
     {
 
-       // Write inventory file
-        $dir = GLPI_INVENTORY_DIR . '/';
-        if (!is_dir($dir)) {
-            mkdir($dir);
+        // Write inventory file
+        if (!is_dir(GLPI_INVENTORY_DIR)) {
+            mkdir(GLPI_INVENTORY_DIR);
         }
 
         $converter = new Converter();
@@ -130,13 +134,14 @@ class Inventory
 
         if (Request::XML_MODE === $format) {
             $this->inventory_format = Request::XML_MODE;
-            file_put_contents($dir . '/' . $this->inventory_id . '.xml', $data->asXML());
-           //convert legacy format
-            $data = $converter->convert($data->asXML());
+            $this->inventory_tmpfile = tempnam(GLPI_INVENTORY_DIR, 'xml_');
+            $contentdata = $data->asXML();
+            //convert legacy format
+            $data = json_decode($converter->convert($contentdata));
         } else {
-            file_put_contents($dir . '/' . $this->inventory_id . '.json', $data);
+            $this->inventory_tmpfile = tempnam(GLPI_INVENTORY_DIR, 'json_');
+            $contentdata = json_encode($data);
         }
-        $data = json_decode($data);
 
         try {
             $converter->validate($data);
@@ -146,9 +151,19 @@ class Inventory
                 '$ref[inventory.schema.json]',
                 $e->getMessage()
             );
+            if ($this->inventory_tmpfile !== false && file_exists($this->inventory_tmpfile)) {
+                unlink($this->inventory_tmpfile);
+            }
             return false;
         } finally {
             $this->raw_data = $data;
+        }
+
+        if ($this->inventory_tmpfile !== false) {
+            file_put_contents($this->inventory_tmpfile, $contentdata);
+        } else {
+            //fallback to in-memory storage if tempnam() call returned false
+            $this->inventory_content = $contentdata;
         }
 
         $this->extractMetadata();
@@ -205,7 +220,7 @@ class Inventory
      */
     public function contact($data)
     {
-        $this->raw_data = json_decode($data);
+        $this->raw_data = $data;
         $this->extractMetadata();
         //create/load agent
         $this->agent = new Agent();
@@ -227,6 +242,8 @@ class Inventory
         if ($this->inError()) {
             throw new \RuntimeException(print_r($this->getErrors(), true));
         }
+
+        \Log::useQueue();
 
         if (!isset($_SESSION['glpiinventoryuserrunning'])) {
             $_SESSION['glpiinventoryuserrunning'] = 'inventory';
@@ -263,14 +280,14 @@ class Inventory
                 }
             }
 
-            $this->unhandled_data = array_diff_key($all_props, $data);
-            if (count($this->unhandled_data)) {
+            $unhandled_data = array_diff_key($all_props, $data);
+            if (count($unhandled_data)) {
                 Session::addMessageAfterRedirect(
                     sprintf(
                         __('Following keys has been ignored during process: %1$s'),
                         implode(
                             ', ',
-                            array_keys($this->unhandled_data)
+                            array_keys($unhandled_data)
                         )
                     ),
                     true,
@@ -292,9 +309,11 @@ class Inventory
 
             $main_class = $this->getMainClass();
             $main = new $main_class($this->item, $this->raw_data);
-            $main->setRequestQuery($this->request_query);
-            $main->setAgent($this->getAgent());
-            $main->setExtraData($this->data);
+            $main
+                ->setDiscovery($this->is_discovery)
+                ->setRequestQuery($this->request_query)
+                ->setAgent($this->getAgent())
+                ->setExtraData($this->data);
 
             $item_start = microtime(true);
             $main->prepare();
@@ -310,6 +329,12 @@ class Inventory
                 $this->processInventoryData();
                 $this->handleItem();
 
+                if (!$this->mainasset->isNew()) {
+                    \Log::handleQueue();
+                } else {
+                    \Log::resetQueue();
+                }
+
                 if (!defined('TU_USER')) {
                     $DB->commit();
                 }
@@ -320,19 +345,21 @@ class Inventory
         } finally {
             unset($_SESSION['glpiinventoryuserrunning']);
             $this->handleInventoryFile();
-            // * For benchs
-            $id = $this->item->fields['id'] ?? 0;
-            $items = $this->mainasset->getInventoried() + $this->mainasset->getRefused();
-            $extra = null;
-            if (count($items)) {
-                $extra = 'Inventoried assets: ';
-                foreach ($items as $item) {
-                    $extra .= $item->getType() . ' #' . $item->getId() . ', ';
+            if (isset($this->mainasset)) {
+                // * For benchs
+                $id = $this->item->fields['id'] ?? 0;
+                $items = $this->mainasset->getInventoried() + $this->mainasset->getRefused();
+                $extra = null;
+                if (count($items)) {
+                    $extra = 'Inventoried assets: ';
+                    foreach ($items as $item) {
+                        $extra .= $item->getType() . ' #' . $item->getId() . ', ';
+                    }
+                    $extra = rtrim($extra, ', ') . "\n";
                 }
-                $extra = rtrim($extra, ', ') . "\n";
+                $this->addBench($this->item->getType(), 'full', $main_start, $extra);
+                $this->printBenchResults();
             }
-            $this->addBench($this->item->getType(), 'full', $main_start, $extra);
-            $this->printBenchResults();
         }
 
         return [];
@@ -373,28 +400,32 @@ class Inventory
      */
     private function handleInventoryFile()
     {
-        $ext = (Request::XML_MODE === $this->inventory_format ? 'xml' : 'json');
-        $tmpfile = sprintf('%s/%s.%s', GLPI_INVENTORY_DIR, $this->inventory_id, $ext);
+        if (isset($this->mainasset)) {
+            $ext = (Request::XML_MODE === $this->inventory_format ? 'xml' : 'json');
+            $items = $this->getItems();
 
-        $items = $this->getItems();
+            foreach ($items as $item) {
+                $itemtype = $item->getType();
+                if (!isset($item->fields['id']) || empty($item->fields['id'])) {
+                    throw new \RuntimeException('Item ID is missing :(');
+                }
+                $id = $item->fields['id'];
 
-        foreach ($items as $item) {
-            $itemtype = $item->getType();
-            if (!isset($item->fields['id']) || empty($item->fields['id'])) {
-                throw new \RuntimeException('Item ID is missing :(');
+                $filename = GLPI_INVENTORY_DIR . '/' . $this->conf->buildInventoryFileName($itemtype, $id, $ext);
+                $subdir = dirname($filename);
+                if (!is_dir($subdir)) {
+                    mkdir($subdir, 0755, true);
+                }
+                if ($this->inventory_tmpfile !== false) {
+                    copy($this->inventory_tmpfile, $filename);
+                } elseif (isset($this->inventory_content)) {
+                    file_put_contents($filename, $this->inventory_content);
+                }
             }
-            $id = $item->fields['id'];
-
-            $filename = GLPI_INVENTORY_DIR . '/' . $this->conf->buildInventoryFileName($itemtype, $id, $ext);
-            $subdir = dirname($filename);
-            if (!is_dir($subdir)) {
-                mkdir($subdir, 0755, true);
-            }
-            copy($tmpfile, $filename);
         }
 
-        if (file_exists($tmpfile)) {
-            unlink($tmpfile);
+        if ($this->inventory_tmpfile !== false && file_exists($this->inventory_tmpfile)) {
+            unlink($this->inventory_tmpfile);
         }
     }
 
@@ -462,7 +493,9 @@ class Inventory
                 'icon'  => Lockedfield::getIcon(),
                 'title' => Lockedfield::getTypeName(Session::getPluralNumber()),
                 'page'  => Lockedfield::getSearchURL(false),
-                'links' => $links
+                'links' => [
+                    "<i class=\"ti ti-plus\" title=\"" . __('Add global lock') . "\"></i><span class='d-none d-xxl-block'>" . __('Add global lock') . "</span>" => Lockedfield::getFormURL(false)
+                ] + $links
             ];
         }
 
@@ -633,7 +666,6 @@ class Inventory
             if ($assettype !== false) {
                //handle if asset type has been found.
                 $asset = new $assettype($this->item, (array)$value);
-                $asset->withHistory($this->mainasset->withHistory());
                 if ($asset->checkConf($this->conf)) {
                     $asset->setMainAsset($this->mainasset);
                     $asset->setAgent($this->getAgent());
@@ -745,10 +777,14 @@ class Inventory
             }
         }
 
-        Toolbox::logInFile(
-            "bench_inventory",
-            $output
-        );
+        if (isCommandLine() && !defined('TU_USER')) {
+            echo $output . "\n";
+        } else {
+            Toolbox::logInFile(
+                "bench_inventory",
+                $output
+            );
+        }
     }
 
     public static function getIcon()
@@ -891,5 +927,18 @@ class Inventory
     public static function getTypeName($nb = 0)
     {
         return __("Inventory");
+    }
+
+    /**
+     * Mark as discovery
+     *
+     * @param bool $disco
+     *
+     * @return $this
+     */
+    public function setDiscovery(bool $disco): self
+    {
+        $this->is_discovery = $disco;
+        return $this;
     }
 }

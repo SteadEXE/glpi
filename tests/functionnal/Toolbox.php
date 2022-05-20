@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -226,6 +228,9 @@ class Toolbox extends DbTestCase
             ], [
                 '{\"Monitor\":[\"6\"],\"Computer\":[\"35\"]}',
                 ['Monitor' => ["6"], 'Computer' => ["35"]]
+            ], [
+                '{\"content\":\"&#60;p&#62;HTML !&#60;/p&#62;\"}',
+                ['content' => '<p>HTML !</p>']
             ]
         ];
     }
@@ -547,7 +552,7 @@ class Toolbox extends DbTestCase
 
        // Processed data is expected to be escaped
         $content_text = \Toolbox::addslashes_deep($content_text);
-        $expected_result = Sanitizer::sanitize($expected_result, false);
+        $expected_result = Sanitizer::encodeHtmlSpecialChars($expected_result);
 
         $this->string(
             \Toolbox::convertTagToImage($content_text, $item, [$doc_id => ['tag' => $img_tag]])
@@ -605,7 +610,7 @@ class Toolbox extends DbTestCase
 
        // Processed data is expected to be escaped
         $content_text = \Toolbox::addslashes_deep($content_text);
-        $expected_result = Sanitizer::sanitize($expected_result, false);
+        $expected_result = Sanitizer::encodeHtmlSpecialChars($expected_result);
 
        // Save old config
         global $CFG_GLPI;
@@ -679,7 +684,7 @@ class Toolbox extends DbTestCase
 
        // Processed data is expected to be escaped
         $content_text = \Toolbox::addslashes_deep($content_text);
-        $expected_result = Sanitizer::sanitize($expected_result, false);
+        $expected_result = Sanitizer::encodeHtmlSpecialChars($expected_result);
 
         $this->string(
             \Toolbox::convertTagToImage($content_text, $item, $doc_data)
@@ -724,8 +729,8 @@ class Toolbox extends DbTestCase
 
        // Processed data is expected to be escaped
         $content_text = \Toolbox::addslashes_deep($content_text);
-        $expected_result_1 = Sanitizer::sanitize($expected_result_1, false);
-        $expected_result_2 = Sanitizer::sanitize($expected_result_2, false);
+        $expected_result_1 = Sanitizer::encodeHtmlSpecialChars($expected_result_1);
+        $expected_result_2 = Sanitizer::encodeHtmlSpecialChars($expected_result_2);
 
         $this->string(
             \Toolbox::convertTagToImage($content_text, $item, [$doc_id_1 => ['tag' => $img_tag]])
@@ -765,7 +770,7 @@ class Toolbox extends DbTestCase
 
        // Processed data is expected to be escaped
         $content_text = \Toolbox::addslashes_deep($content_text);
-        $expected_result = Sanitizer::sanitize($expected_result, false);
+        $expected_result = Sanitizer::encodeHtmlSpecialChars($expected_result);
 
         $this->string(
             \Toolbox::convertTagToImage($content_text, $item, [$doc_id => ['tag' => $img_tag]])
@@ -1071,7 +1076,14 @@ class Toolbox extends DbTestCase
                     ],
                     'b'   => 'test3'
                 ], '_', 'a%5B0%5D=test1_a%5B1%5D=test2_b=test3' // '[' converted to %5B, ']' converted to %5D
-            ]
+            ],
+            [
+                [
+                    'a'   => 'test1',
+                    [], // Empty array Should be ignored
+                    'b'   => 'test2'
+                ], '&', 'a=test1&b=test2'
+            ],
         ];
     }
 
@@ -1090,6 +1102,16 @@ class Toolbox extends DbTestCase
      */
     protected function testIsFloatProvider(): Generator
     {
+        yield [
+            'value'    => null,
+            'expected' => false,
+        ];
+
+        yield [
+            'value'    => "",
+            'expected' => false,
+        ];
+
         yield [
             'value' => "1",
             'expected' => false
@@ -1258,5 +1280,69 @@ class Toolbox extends DbTestCase
         }
 
         $this->integer($result)->isEqualTo($decimals);
+    }
+
+    /**
+     * Data provider for testGetMioSizeFromString
+     *
+     * @return Generator
+     */
+    protected function testGetMioSizeFromStringProvider(): Generator
+    {
+        yield [
+            'size'     => "1024",
+            'expected' => 1024,
+        ];
+
+        yield [
+            'size'     => "1024 mo",
+            'expected' => 1024,
+        ];
+
+        yield [
+            'size'     => "1024 mio",
+            'expected' => 1024,
+        ];
+
+        yield [
+            'size'     => "1024MO",
+            'expected' => 1024,
+        ];
+
+        yield [
+            'size'     => "2 gio",
+            'expected' => 2048,
+        ];
+
+        yield [
+            'size'     => "2gO",
+            'expected' => 2048,
+        ];
+
+        yield [
+            'size'     => "2 tio",
+            'expected' => 2097152,
+        ];
+
+        yield [
+            'size'     => "2TO",
+            'expected' => 2097152,
+        ];
+    }
+
+    /**
+     * Tests for Toolbox::getMioSizeFromString()
+     *
+     * @dataprovider testGetMioSizeFromStringProvider
+     *
+     * @param string $value
+     * @param mixed $expected
+     *
+     * @return void
+     */
+    public function testGetMioSizeFromString(string $size, $expected): void
+    {
+        $result = \Toolbox::getMioSizeFromString($size);
+        $this->variable($result)->isEqualTo($expected);
     }
 }

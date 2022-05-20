@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -252,7 +254,7 @@ class Ticket extends DbTestCase
 
        // 6.1 -> check first task
         $taskA = array_shift($found_tasks);
-        $this->string($taskA['content'])->isIdenticalTo(Sanitizer::sanitize('<p>my task template A</p>', false));
+        $this->string($taskA['content'])->isIdenticalTo(Sanitizer::encodeHtmlSpecialChars('<p>my task template A</p>'));
         $this->variable($taskA['taskcategories_id'])->isEqualTo($taskcat_id);
         $this->variable($taskA['actiontime'])->isEqualTo(60);
         $this->variable($taskA['is_private'])->isEqualTo(1);
@@ -262,7 +264,7 @@ class Ticket extends DbTestCase
 
        // 6.2 -> check second task
         $taskB = array_shift($found_tasks);
-        $this->string($taskB['content'])->isIdenticalTo(Sanitizer::sanitize('<p>my task template B</p>', false));
+        $this->string($taskB['content'])->isIdenticalTo(Sanitizer::encodeHtmlSpecialChars('<p>my task template B</p>'));
         $this->variable($taskB['taskcategories_id'])->isEqualTo($taskcat_id);
         $this->variable($taskB['actiontime'])->isEqualTo(120);
         $this->variable($taskB['is_private'])->isEqualTo(0);
@@ -383,6 +385,7 @@ class Ticket extends DbTestCase
             (int)$ticket->add([
                 'name'    => '',
                 'content' => 'A ticket to check ACLS',
+                '_users_id_requester' => getItemByTypeName('User', 'post-only', true),
             ])
         )->isGreaterThan(0);
 
@@ -481,6 +484,7 @@ class Ticket extends DbTestCase
             (int)$ticket->add([
                 'name'    => '',
                 'content' => 'A ticket to check ACLS',
+                '_users_id_assign' => getItemByTypeName("User", 'tech', true),
             ])
         )->isGreaterThan(0);
 
@@ -596,6 +600,7 @@ class Ticket extends DbTestCase
             (int)$ticket->add([
                 'name'    => '',
                 'content' => 'Another ticket to check ACLS',
+                '_users_id_assign' => getItemByTypeName("User", 'tech', true),
             ])
         )->isGreaterThan(0);
         $this->boolean((bool)$ticket->getFromDB($ticket->getID()))->isTrue();
@@ -632,6 +637,7 @@ class Ticket extends DbTestCase
             (int)$ticket->add([
                 'name'    => '',
                 'content' => 'A ticket to check ACLS',
+                '_users_id_assign' => getItemByTypeName("User", TU_USER, true),
             ])
         )->isGreaterThan(0);
 
@@ -772,61 +778,63 @@ class Ticket extends DbTestCase
         ob_end_clean();
         $crawler = new Crawler($output);
 
+        $backtrace = debug_backtrace(0, 1);
+        $caller = "File: {$backtrace[0]['file']} Function: {$backtrace[0]['function']}:{$backtrace[0]['line']}";
        // Opening date, editable
         $matches = iterator_to_array($crawler->filter("#itil-data input[name=date]:not([disabled])"));
-        $this->array($matches)->hasSize(($openDate === true ? 1 : 0), 'RW Opening date');
+        $this->array($matches)->hasSize(($openDate === true ? 1 : 0), "RW Opening date $caller");
 
        // Time to own, editable
         $matches = iterator_to_array($crawler->filter("#itil-data input[name=time_to_own]:not([disabled])"));
-        $this->array($matches)->hasSize(($timeOwnResolve === true ? 1 : 0), 'Time to own editable');
+        $this->array($matches)->hasSize(($timeOwnResolve === true ? 1 : 0), "Time to own editable $caller");
 
        // Internal time to own, editable
         $matches = iterator_to_array($crawler->filter("#itil-data input[name=internal_time_to_own]:not([disabled])"));
-        $this->array($matches)->hasSize(($timeOwnResolve === true ? 1 : 0), 'Internal time to own editable');
+        $this->array($matches)->hasSize(($timeOwnResolve === true ? 1 : 0), "Internal time to own editable $caller");
 
        // Time to resolve, editable
         $matches = iterator_to_array($crawler->filter("#itil-data input[name=time_to_resolve]:not([disabled])"));
-        $this->array($matches)->hasSize(($timeOwnResolve === true ? 1 : 0), 'Time to resolve');
+        $this->array($matches)->hasSize(($timeOwnResolve === true ? 1 : 0), "Time to resolve $caller");
 
        // Internal time to resolve, editable
         $matches = iterator_to_array($crawler->filter("#itil-data input[name=internal_time_to_resolve]:not([disabled])"));
-        $this->array($matches)->hasSize(($timeOwnResolve === true ? 1 : 0), 'Internal time to resolve');
+        $this->array($matches)->hasSize(($timeOwnResolve === true ? 1 : 0), "Internal time to resolve $caller");
 
        //Type
         $matches = iterator_to_array($crawler->filter("#itil-data select[name=type]:not([disabled])"));
-        $this->array($matches)->hasSize(($type === true ? 1 : 0), 'Type');
+        $this->array($matches)->hasSize(($type === true ? 1 : 0), "Type $caller");
 
        //Status
         $matches = iterator_to_array($crawler->filter("#itil-data select[name=status]:not([disabled])"));
-        $this->array($matches)->hasSize(($status === true ? 1 : 0), 'Status');
+        $this->array($matches)->hasSize(($status === true ? 1 : 0), "Status $caller");
 
        //Urgency
         $matches = iterator_to_array($crawler->filter("#itil-data select[name=urgency]:not([disabled])"));
-        $this->array($matches)->hasSize(($urgency === true ? 1 : 0), 'Urgency');
+        $this->array($matches)->hasSize(($urgency === true ? 1 : 0), "Urgency $caller");
 
        //Impact
         $matches = iterator_to_array($crawler->filter("#itil-data select[name=impact]:not([disabled])"));
-        $this->array($matches)->hasSize(($impact === true ? 1 : 0), 'Impact');
+        $this->array($matches)->hasSize(($impact === true ? 1 : 0), "Impact $caller");
 
        //Category
         $matches = iterator_to_array($crawler->filter("#itil-data select[name=itilcategories_id]:not([disabled])"));
-        $this->array($matches)->hasSize(($category === true ? 1 : 0), 'Category');
+        $this->array($matches)->hasSize(($category === true ? 1 : 0), "Category $caller");
 
        //Request source file_put_contents('/tmp/out.html', $output)
         $matches = iterator_to_array($crawler->filter("#itil-data select[name=requesttypes_id]:not([disabled])"));
-        $this->array($matches)->hasSize($requestSource === true ? 1 : 0, 'Request source');
+        $this->array($matches)->hasSize($requestSource === true ? 1 : 0, "Request source $caller");
 
        //Location
         $matches = iterator_to_array($crawler->filter("#itil-data select[name=locations_id]:not([disabled])"));
-        $this->array($matches)->hasSize(($location === true ? 1 : 0), 'Location');
+        $this->array($matches)->hasSize(($location === true ? 1 : 0), "Location $caller");
 
        //Priority, editable
         $matches = iterator_to_array($crawler->filter("#itil-data select[name=priority]:not([disabled])"));
-        $this->array($matches)->hasSize(($priority === true ? 1 : 0), 'RW priority');
+        $this->array($matches)->hasSize(($priority === true ? 1 : 0), "RW priority $caller");
 
        //Save button
         $matches = iterator_to_array($crawler->filter("#itil-footer button[type=submit][name=update]:not([disabled])"));
-        $this->array($matches)->hasSize(($save === true ? 1 : 0), ($save === true ? 'Save button missing' : 'Save button present'));
+        $this->array($matches)->hasSize(($save === true ? 1 : 0), ($save === true ? 'Save button missing' : 'Save button present') . ' ' . $caller);
 
        //Assign to
        /*preg_match(
@@ -1062,8 +1070,6 @@ class Ticket extends DbTestCase
     {
         global $DB;
 
-        $this->dump("changeTechRight: $rights");
-
        // set new rights
         $DB->update(
             'glpi_profilerights',
@@ -1181,6 +1187,7 @@ class Ticket extends DbTestCase
             (int)$ticket->add([
                 'name'    => '',
                 'content' => 'A ticket to check assign ACLS',
+                '_users_id_assign' => getItemByTypeName("User", TU_USER, true),
             ])
         )->isGreaterThan(0);
 
@@ -1296,6 +1303,26 @@ class Ticket extends DbTestCase
             $category = true,
             $requestSource = true,
             $location = true
+        );
+
+        // Assign right without UPDATE
+        $this->changeTechRight(\Ticket::ASSIGN | \Ticket::READALL);
+        $this->checkFormOutput(
+            $ticket,
+            $name = false,
+            $textarea = false,
+            $priority = false,
+            $save = true,
+            $assign = true,
+            $openDate = false,
+            $timeOwnResolve = false,
+            $type = false,
+            $status = false,
+            $urgency = false,
+            $impact = false,
+            $category = false,
+            $requestSource = false,
+            $location = false
         );
     }
 
@@ -2888,8 +2915,8 @@ class Ticket extends DbTestCase
         $this->integer((int)$fup_count)->isEqualTo(4);
        // Target ticket should have the original document, one instance of the duplicate, and the new document from one of the source tickets
         $this->integer((int)$doc_count)->isEqualTo(3);
-       // Target ticket should have all users not marked as duplicates above + original requester (ID: 6)
-        $this->integer((int)$user_count)->isEqualTo(4);
+       // Target ticket should have all users not marked as duplicates above
+        $this->integer((int)$user_count)->isEqualTo(3);
        // Target ticket should have all groups not marked as duplicates above
         $this->integer((int)$group_count)->isEqualTo(2);
        // Target ticket should have all suppliers not marked as duplicates above
@@ -3029,9 +3056,6 @@ class Ticket extends DbTestCase
 
     public function testKeepScreenshotsOnFormReload()
     {
-       //FIXME: temporary commented for other tests to work; must be fixed on modernui
-        return true;
-
        //login to get session
         $auth = new \Auth();
         $this->boolean($auth->login(TU_USER, TU_PASS, true))->isTrue();
@@ -3154,41 +3178,6 @@ class Ticket extends DbTestCase
             'items_id' => $instance->getID(),
         ]);
         $this->integer($count)->isEqualTo(2);
-    }
-
-    public function testKeepScreenshotFromTemplate()
-    {
-       //FIXME: temporary commented for other tests to work; must be fixed on modernui
-        return true;
-
-       //login to get session
-        $auth = new \Auth();
-        $this->boolean($auth->login(TU_USER, TU_PASS, true))->isTrue();
-
-       // create a template with a predeined description
-        $ticketTemplate = new \TicketTemplate();
-        $ticketTemplate->add([
-            'name' => $this->getUniqueString(),
-        ]);
-        $base64Image = base64_encode(file_get_contents(__DIR__ . '/../fixtures/uploads/foo.png'));
-        $content = '&lt;p&gt;&lt;img id="3e29dffe-0237ea21-5e57d2c8895d55.57735524"'
-        . ' src="data:image/png;base64,' . $base64Image . '" width="12" height="12" /&gt;&lt;/p&gt;';
-        $predefinedField = new \TicketTemplatePredefinedField();
-        $predefinedField->add([
-            'tickettemplates_id' => $ticketTemplate->getID(),
-            'num' => '21',
-            'value' => $content
-        ]);
-        $session_tpl_id_back = $_SESSION['glpiactiveprofile']['tickettemplates_id'];
-        $_SESSION['glpiactiveprofile']['tickettemplates_id'] = $ticketTemplate->getID();
-
-        $this->output(
-            function () use ($session_tpl_id_back) {
-                $instance = new \Ticket();
-                $instance->showForm('0');
-                $_SESSION['glpiactiveprofile']['tickettemplates_id'] = $session_tpl_id_back;
-            }
-        )->contains('src=&quot;data:image/png;base64,' . $base64Image . '&quot;');
     }
 
 
@@ -4061,5 +4050,463 @@ HTML
         // Check ticket status is closed
         $this->boolean($ticket->getFromDB($tickets_id))->isTrue();
         $this->integer($ticket->fields['status'])->isEqualTo(\CommonITILObject::CLOSED);
+    }
+
+    public function testSurveyCreation()
+    {
+        global $DB;
+
+        $this->login();
+        // Create ticket
+        $ticket = new \Ticket();
+        $tickets_id = $ticket->add([
+            'name' => 'testSurveyCreation',
+            'content' => 'testSurveyCreation',
+        ]);
+        $this->integer($tickets_id)->isGreaterThan(0);
+
+        $entities_id = $ticket->fields['entities_id'];
+        // Update Entity to enable survey
+        $entity = new \Entity();
+        $result = $entity->update([
+            'id'                => $entities_id,
+            'inquest_config'    => 1,
+            'inquest_rate'      => 100,
+            'inquest_delay'     => 0,
+        ]);
+        $this->boolean($result)->isTrue();
+
+        $inquest = new \TicketSatisfaction();
+
+        // Verify no existing survey for ticket
+        $it = $DB->request([
+            'SELECT' => ['id'],
+            'FROM' => \TicketSatisfaction::getTable(),
+            'WHERE' => [
+                'tickets_id' => $tickets_id,
+            ],
+        ]);
+        $this->integer($it->count())->isEqualTo(0);
+
+        // Close ticket
+        $this->boolean($ticket->update([
+            'id' => $tickets_id,
+            'status' => \CommonITILObject::CLOSED
+        ]))->isTrue();
+
+        // Verify survey created
+        $it = $DB->request([
+            'SELECT' => ['id'],
+            'FROM' => \TicketSatisfaction::getTable(),
+            'WHERE' => [
+                'tickets_id' => $tickets_id,
+            ],
+        ]);
+        $this->integer($it->count())->isEqualTo(1);
+    }
+
+    public function testSurveyCreationOnReopened()
+    {
+        global $DB;
+
+        $this->login();
+        // Create ticket
+        $ticket = new \Ticket();
+        $tickets_id = $ticket->add([
+            'name' => 'testSurveyCreation',
+            'content' => 'testSurveyCreation',
+        ]);
+        $this->integer($tickets_id)->isGreaterThan(0);
+
+        $entities_id = $ticket->fields['entities_id'];
+        // Update Entity to enable survey
+        $entity = new \Entity();
+        $result = $entity->update([
+            'id' => $entities_id,
+            'inquest_config' => 1,
+            'inquest_rate' => 100,
+            'inquest_delay' => 0,
+        ]);
+        $this->boolean($result)->isTrue();
+
+        $inquest = new \TicketSatisfaction();
+
+        // Verify no existing survey for ticket
+        $it = $DB->request([
+            'SELECT' => ['id'],
+            'FROM' => \TicketSatisfaction::getTable(),
+            'WHERE' => [
+                'tickets_id' => $tickets_id,
+            ],
+        ]);
+        $this->integer($it->count())->isEqualTo(0);
+
+        // Close ticket
+        $this->boolean($ticket->update([
+            'id' => $tickets_id,
+            'status' => \CommonITILObject::CLOSED
+        ]))->isTrue();
+
+        // Reopen ticket
+        $this->boolean($ticket->update([
+            'id' => $tickets_id,
+            'status' => \CommonITILObject::INCOMING
+        ]))->isTrue();
+
+        $result = $entity->update([
+            'id' => $entities_id,
+            'inquest_config' => 1,
+            'inquest_rate' => 100,
+            'inquest_delay' => 0,
+        ]);
+        $this->boolean($result)->isTrue();
+
+        // Re-close ticket
+        $this->boolean($ticket->update([
+            'id' => $tickets_id,
+            'status' => \CommonITILObject::CLOSED
+        ]))->isTrue();
+
+        // Verify survey created and only one exists
+        $it = $DB->request([
+            'SELECT' => ['id'],
+            'FROM' => \TicketSatisfaction::getTable(),
+            'WHERE' => [
+                'tickets_id' => $tickets_id,
+            ],
+        ]);
+        $this->integer($it->count())->isEqualTo(1);
+    }
+
+    public function testAddAssignWithoutUpdateRight()
+    {
+        $this->login();
+
+        $ticket = new \Ticket();
+        $tickets_id = $ticket->add([
+            'name' => 'testAddAssignWithoutUpdateRight',
+            'content' => 'testAddAssignWithoutUpdateRight',
+            '_skip_auto_assign' => true,
+        ]);
+        $this->integer($tickets_id)->isGreaterThan(0);
+
+        $ticket->loadActors();
+        $this->integer($ticket->countUsers(\CommonITILActor::ASSIGN))->isEqualTo(0);
+        $this->integer($ticket->countUsers(\CommonITILActor::REQUESTER))->isEqualTo(0);
+
+        $this->changeTechRight(\Ticket::ASSIGN | \Ticket::READALL);
+        $this->boolean($ticket->canUpdateItem())->isFalse();
+        $this->boolean((bool) $ticket->canAssign())->isTrue();
+        $this->boolean($ticket->update([
+            'id' => $tickets_id,
+            '_actors' => [
+                'requester' => [
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'post-only', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ],
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'tech', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ]
+                ],
+                'assign' => [
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'tech', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ]
+                ],
+            ],
+        ]))->isTrue();
+        $ticket->loadActors();
+        // Verify new assignee was added
+        $this->integer($ticket->countUsers(\CommonITILActor::ASSIGN))->isEqualTo(1);
+        // Verify new requester wasn't added
+        $this->integer($ticket->countUsers(\CommonITILActor::REQUESTER))->isEqualTo(0);
+    }
+
+    public function testAddAssignWithoutAssignRight()
+    {
+        $this->login();
+
+        $ticket = new \Ticket();
+        $tickets_id = $ticket->add([
+            'name' => 'testAddAssignWithoutAssignRight',
+            'content' => 'testAddAssignWithoutAssignRight',
+            '_skip_auto_assign' => true,
+        ]);
+        $this->integer($tickets_id)->isGreaterThan(0);
+
+        $ticket->loadActors();
+        $this->integer($ticket->countUsers(\CommonITILActor::ASSIGN))->isEqualTo(0);
+        $this->integer($ticket->countUsers(\CommonITILActor::REQUESTER))->isEqualTo(0);
+
+        $this->changeTechRight(\Ticket::READALL | UPDATE);
+        $this->boolean($ticket->canUpdateItem())->isTrue();
+        $this->boolean((bool) $ticket->canAssign())->isFalse();
+        $this->boolean($ticket->update([
+            'id' => $tickets_id,
+            '_actors' => [
+                'requester' => [
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'post-only', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ],
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'tech', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ]
+                ],
+                'assign' => [
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'tech', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ]
+                ],
+            ],
+        ]))->isTrue();
+        $ticket->loadActors();
+        // Verify new assignee wasn't added
+        $this->integer($ticket->countUsers(\CommonITILActor::ASSIGN))->isEqualTo(0);
+        // Verify new requester was added
+        $this->integer($ticket->countUsers(\CommonITILActor::REQUESTER))->isEqualTo(2);
+    }
+
+    public function testAddActorsWithAssignAndUpdateRight()
+    {
+        $this->login();
+
+        $ticket = new \Ticket();
+        $tickets_id = $ticket->add([
+            'name' => 'testAddActorsWithAssignAndUpdateRight',
+            'content' => 'testAddActorsWithAssignAndUpdateRight',
+            '_skip_auto_assign' => true,
+        ]);
+        $this->integer($tickets_id)->isGreaterThan(0);
+
+        $ticket->loadActors();
+        $this->integer($ticket->countUsers(\CommonITILActor::ASSIGN))->isEqualTo(0);
+        $this->integer($ticket->countUsers(\CommonITILActor::REQUESTER))->isEqualTo(0);
+
+        $this->changeTechRight(\Ticket::ASSIGN | UPDATE | \Ticket::READALL);
+        $this->boolean($ticket->canUpdateItem())->isTrue();
+        $this->boolean((bool) $ticket->canAssign())->isTrue();
+        $this->boolean($ticket->update([
+            'id' => $tickets_id,
+            '_actors' => [
+                'requester' => [
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'post-only', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ],
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'tech', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ]
+                ],
+                'assign' => [
+                    [
+                        'itemtype'  => 'User',
+                        'items_id'  => getItemByTypeName('User', 'tech', true),
+                        'use_notification' => 0,
+                        'alternative_email' => '',
+                    ]
+                ],
+            ],
+        ]))->isTrue();
+        $ticket->loadActors();
+        // Verify new assignee was added
+        $this->integer($ticket->countUsers(\CommonITILActor::ASSIGN))->isEqualTo(1);
+        // Verify new requester was added
+        $this->integer($ticket->countUsers(\CommonITILActor::REQUESTER))->isEqualTo(2);
+    }
+
+
+    public function testGetActorsForType()
+    {
+        $this->login();
+
+        $ticket = new \Ticket();
+        $ticket->getEmpty();
+
+        $tech_id = getItemByTypeName('User', 'tech', true);
+        $postonly_id = getItemByTypeName('User', 'post-only', true);
+
+        // ## 1st - test auto requester and assign feature
+        // ###############################################
+
+        $this->array($ticket->getActorsForType(\CommonITILActor::REQUESTER))->hasSize(1);
+        $this->array($ticket->getActorsForType(\CommonITILActor::OBSERVER))->hasSize(0);
+        $this->array($ticket->getActorsForType(\CommonITILActor::ASSIGN))->hasSize(1);
+
+        // disable autoactor by parameter
+        $params = ['_skip_default_actor' => true];
+        $this->array($ticket->getActorsForType(\CommonITILActor::REQUESTER, $params))->hasSize(0);
+        $this->array($ticket->getActorsForType(\CommonITILActor::OBSERVER, $params))->hasSize(0);
+        $this->array($ticket->getActorsForType(\CommonITILActor::ASSIGN, $params))->hasSize(0);
+
+        // disable autoactor in session
+        $_SESSION['glpiset_default_requester'] = false;
+        $_SESSION['glpiset_default_tech']      = false;
+        $this->array($ticket->getActorsForType(\CommonITILActor::REQUESTER))->hasSize(0);
+        $this->array($ticket->getActorsForType(\CommonITILActor::OBSERVER))->hasSize(0);
+        $this->array($ticket->getActorsForType(\CommonITILActor::ASSIGN))->hasSize(0);
+
+        // ## 2nd - test load actors from templates (simulated)
+        // ####################################################
+        //reset session
+        $_SESSION['glpiset_default_requester'] = true;
+        $_SESSION['glpiset_default_tech']      = true;
+        //prepare params
+        $params = [
+            '_template_changed'  => true,
+            '_predefined_fields' => [
+                '_users_id_requester' => $postonly_id,
+                '_users_id_observer'  => $postonly_id,
+                '_users_id_assign'    => $tech_id,
+            ]
+        ];
+        $this->array($ticket->getActorsForType(\CommonITILActor::REQUESTER, $params))->hasSize(2);
+        $this->array($ticket->getActorsForType(\CommonITILActor::OBSERVER, $params))->hasSize(1);
+        $this->array($ticket->getActorsForType(\CommonITILActor::ASSIGN, $params))->hasSize(2);
+
+        $_SESSION['glpiset_default_requester'] = false;
+        $_SESSION['glpiset_default_tech']      = false;
+        $this->array($ticket->getActorsForType(\CommonITILActor::REQUESTER, $params))->hasSize(1)
+            ->integer[0]
+            ->integer['items_id']->isEqualTo($postonly_id);
+        $this->array($ticket->getActorsForType(\CommonITILActor::OBSERVER, $params))->hasSize(1)
+            ->integer[0]
+            ->integer['items_id']->isEqualTo($postonly_id);
+        $this->array($ticket->getActorsForType(\CommonITILActor::ASSIGN, $params))->hasSize(1)
+            ->integer[0]
+            ->integer['items_id']->isEqualTo($tech_id);
+
+        // apend groups
+        $params['_predefined_fields']['_groups_id_requester'] = [1];
+        $params['_predefined_fields']['_groups_id_observer'] = [1];
+        $params['_predefined_fields']['_groups_id_assign'] = [1];
+
+        $this->array($ticket->getActorsForType(\CommonITILActor::REQUESTER, $params))->hasSize(2)
+            ->integer[1]
+            ->string['text']->isEqualTo("_test_group_1");
+        $this->array($ticket->getActorsForType(\CommonITILActor::OBSERVER, $params))->hasSize(2)
+            ->integer[1]
+            ->string['text']->isEqualTo("_test_group_1");
+        $this->array($ticket->getActorsForType(\CommonITILActor::ASSIGN, $params))->hasSize(2)
+            ->integer[1]
+            ->string['text']->isEqualTo("_test_group_1");
+
+        // ## 2nd - test load actors from _actors key (reload simulated)
+        // #############################################################
+        //reset session
+        $_SESSION['glpiset_default_requester'] = true;
+        $_SESSION['glpiset_default_tech']      = true;
+        //prepare params
+        $params = [
+            '_skip_default_actor' => true,
+            '_actors'             => [
+                'requester' => [
+                    ['itemtype' => 'User',  'items_id' => $postonly_id],
+                    ['itemtype' => 'Group', 'items_id' => 1]
+                ],
+                'observer'  => [
+                    ['itemtype' => 'User',  'items_id' => $postonly_id],
+                    ['itemtype' => 'Group', 'items_id' => 1]
+                ],
+                'assign'    => [
+                    ['itemtype' => 'User',  'items_id' => $tech_id],
+                    ['itemtype' => 'Group', 'items_id' => 1]
+                ],
+            ]
+        ];
+        $requesters = $ticket->getActorsForType(\CommonITILActor::REQUESTER, $params);
+        $this->array($requesters)->hasSize(2)
+            ->integer[0]
+            ->string['text']->isEqualTo("post-only");
+        $this->array($requesters)
+            ->integer[1]
+            ->string['text']->isEqualTo("_test_group_1");
+        $observers = $ticket->getActorsForType(\CommonITILActor::OBSERVER, $params);
+        $this->array($observers)->hasSize(2)
+            ->integer[0]
+            ->string['text']->isEqualTo("post-only");
+        $this->array($observers)
+            ->integer[1]
+            ->string['text']->isEqualTo("_test_group_1");
+        $assignees = $ticket->getActorsForType(\CommonITILActor::ASSIGN, $params);
+        $this->array($assignees)->hasSize(2)
+            ->integer[0]
+            ->string['text']->isEqualTo("tech");
+        $this->array($assignees)
+            ->integer[1]
+            ->string['text']->isEqualTo("_test_group_1");
+    }
+
+
+    public function testNeedReopen()
+    {
+        $this->login();
+
+        $tech_id     = getItemByTypeName('User', 'tech', true);
+        $postonly_id = getItemByTypeName('User', 'post-only', true);
+
+        $ticket = new \Ticket();
+        $tickets_id = $ticket->add([
+            'name'                => 'testNeedReopen',
+            'content'             => 'testNeedReopen',
+            '_users_id_requester' => $postonly_id,
+            '_users_id_assign'    => $tech_id,
+        ]);
+        $this->integer($tickets_id)->isGreaterThan(0);
+        $this->boolean((bool)$ticket->getFromDB($ticket->getID()))->isTrue();
+        $this->integer($ticket->fields['status'])->isEqualTo(\Ticket::ASSIGNED);
+        $this->boolean((bool)$ticket->needReopen())->isFalse();
+
+        $ticket->update([
+            'id' => $tickets_id,
+            'status' => \Ticket::WAITING,
+        ]);
+
+        // tech user cant reopen
+        $this->boolean((bool)$ticket->getFromDB($ticket->getID()))->isTrue();
+        $this->integer($ticket->fields['status'])->isEqualTo(\Ticket::WAITING);
+        $this->boolean((bool)$ticket->needReopen())->isFalse();
+
+        // requester can reopen
+        $this->login('post-only', 'postonly');
+        $this->boolean((bool)$ticket->getFromDB($ticket->getID()))->isTrue();
+        $this->integer($ticket->fields['status'])->isEqualTo(\Ticket::WAITING);
+        $this->boolean((bool)$ticket->needReopen())->isTrue();
+
+        // force a reopen
+        $followup = new \ITILFollowup();
+        $followup->add([
+            'itemtype'   => 'Ticket',
+            'items_id'   => $tickets_id,
+            'content'    => 'testNeedReopen',
+            'add_reopen' => 1,
+        ]);
+
+        // requester cant reopen anymore (ticket is already in an open state)
+        $this->boolean((bool)$ticket->getFromDB($ticket->getID()))->isTrue();
+        $this->integer($ticket->fields['status'])->isEqualTo(\Ticket::ASSIGNED);
+        $this->boolean((bool)$ticket->needReopen())->isFalse();
     }
 }

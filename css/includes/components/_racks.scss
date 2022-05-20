@@ -1,12 +1,13 @@
 /*!
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -14,18 +15,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -144,14 +146,12 @@ ul.indexes {
     position: relative;
 
     &::after {
-        content: "\f067";
+        content: "\2b";
         left: 45%;
-        font-size: 1em;
         color: grey;
         top: 1px;
-        font-family: "Font Awesome 5 Free";
+        font: 1em var(--fa-font-solid);
         position: absolute;
-        font-weight: 900;
     }
 
     &:hover {
@@ -180,7 +180,7 @@ ul.indexes {
     .racks_add {
         border: 1px solid $table-border-color;
         border-width: 0 1px 1px 0;
-        background-size: 40px 39px;
+        background-size: var(--dcroom-grid-cellw) var(--dcroom-grid-cellh);
         background-image:
             linear-gradient(
                 to right,
@@ -195,8 +195,8 @@ ul.indexes {
         margin-left: 15px;
 
         .cell_add {
-            height: 39px;
-            width: 40px;
+            height: var(--dcroom-grid-cellh);
+            width: var(--dcroom-grid-cellw);
             float: left;
 
             &::after {
@@ -278,7 +278,7 @@ ul.indexes {
 
             li {
                 float: left;
-                width: 40px;
+                width: var(--dcroom-grid-cellw);
             }
         }
 
@@ -286,9 +286,8 @@ ul.indexes {
             width: 15px;
 
             li {
-                width: 10px;
-                height: 39px;
-                line-height: 40px;
+                height: var(--dcroom-grid-cellh);
+                line-height: calc(var(--dcroom-grid-cellh) + 1px);
             }
         }
     }

@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -581,6 +583,9 @@ class Rule extends CommonDBTM
         $isadmin = static::canUpdate();
         $actions = parent::getSpecificMassiveActions($checkitem);
 
+        if (!$this->isEntityAssign()) {
+            unset($actions[MassiveAction::class . MassiveAction::CLASS_ACTION_SEPARATOR . 'add_transfer_list']);
+        }
         $collectiontype = $this->getCollectionClassName();
         if ($collection = getItemForItemtype($collectiontype)) {
             if (
@@ -1480,15 +1485,14 @@ class Rule extends CommonDBTM
     /**
      * Process the rule
      *
-     * @param &$input          the input data used to check criteria
-     * @param &$output         the initial output array used to be manipulate by actions
-     * @param &$params         parameters for all internal functions
-     * @param &options   array options:
+     * @param array &$input the input data used to check criterias
+     * @param array &$output the initial ouput array used to be manipulate by actions
+     * @param array &$params parameters for all internal functions
+     * @param array &options array options:
      *                     - only_criteria : only react on specific criteria
      *
-     * @return the output array updated by actions.
-     *         If rule matched add field _rule_process to return value
-     **/
+     * @return void
+     */
     public function process(&$input, &$output, &$params, &$options = [])
     {
 
@@ -1523,7 +1527,7 @@ class Rule extends CommonDBTM
      * @param $refoutput   the initial output array used to be manipulate by actions
      * @param $newoutput   the output array after actions process
      *
-     * @return the options array updated.
+     * @return void
      **/
     public function updateOnlyCriteria(&$options, $refoutput, $newoutput)
     {
@@ -1651,7 +1655,7 @@ class Rule extends CommonDBTM
      * @param array $input          the input data used to check criteria
      * @param array &$check_results
      *
-     * @return boolean if criteria match
+     * @return void
      **/
     public function testCriterias($input, &$check_results)
     {
@@ -2259,11 +2263,11 @@ class Rule extends CommonDBTM
 
         // Some data may come from the database, and be sanitized (i.e. html special chars already encoded),
         // but some data may have been build from translation or from some plugin code and may be not sanitized.
-        // First, extract the verbatim value (i.e. with non encoded specia chars), then encode entities to
+        // First, extract the verbatim value (i.e. with non encoded specia chars), then encode special chars to
         // ensure HTML validity (and to prevent XSS).
-        $text  = "<td $addtotd>" . Html::entities_deep(Sanitizer::getVerbatimValue($criterion)) . "</td>";
-        $text .= "<td $addtotd>" . Html::entities_deep(Sanitizer::getVerbatimValue($condition)) . "</td>";
-        $text .= "<td $addtotd>" . Html::entities_deep(Sanitizer::getVerbatimValue($pattern)) . "</td>";
+        $text  = "<td $addtotd>" . Sanitizer::encodeHtmlSpecialChars(Sanitizer::getVerbatimValue($criterion)) . "</td>";
+        $text .= "<td $addtotd>" . Sanitizer::encodeHtmlSpecialChars(Sanitizer::getVerbatimValue($condition)) . "</td>";
+        $text .= "<td $addtotd>" . Sanitizer::encodeHtmlSpecialChars(Sanitizer::getVerbatimValue($pattern)) . "</td>";
         return $text;
     }
 
@@ -2282,11 +2286,11 @@ class Rule extends CommonDBTM
 
         // Some data may come from the database, and be sanitized (i.e. html special chars already encoded),
         // but some data may have been build from translation or from some plugin code and may be not sanitized.
-        // First, extract the verbatim value (i.e. with non encoded specia chars), then encode entities to
+        // First, extract the verbatim value (i.e. with non encoded specia chars), then encode special chars to
         // ensure HTML validity (and to prevent XSS).
-        $text  = "<td $addtotd>" . Html::entities_deep(Sanitizer::getVerbatimValue($field)) . "</td>";
-        $text .= "<td $addtotd>" . Html::entities_deep(Sanitizer::getVerbatimValue($type)) . "</td>";
-        $text .= "<td $addtotd>" . Html::entities_deep(Sanitizer::getVerbatimValue($value)) . "</td>";
+        $text  = "<td $addtotd>" . Sanitizer::encodeHtmlSpecialChars(Sanitizer::getVerbatimValue($field)) . "</td>";
+        $text .= "<td $addtotd>" . Sanitizer::encodeHtmlSpecialChars(Sanitizer::getVerbatimValue($type)) . "</td>";
+        $text .= "<td $addtotd>" . Sanitizer::encodeHtmlSpecialChars(Sanitizer::getVerbatimValue($value)) . "</td>";
         return $text;
     }
 
@@ -2390,7 +2394,7 @@ class Rule extends CommonDBTM
      * @param $condition condition used
      * @param $pattern   the pattern
      *
-     * @return a value associated with the criteria, or false otherwise
+     * @return mixed|false  A value associated with the criteria, or false otherwise
      **/
     public function getAdditionalCriteriaDisplayPattern($ID, $condition, $pattern)
     {
@@ -2468,11 +2472,6 @@ class Rule extends CommonDBTM
                     $types = $CFG_GLPI['state_types'];
                     $types[''] = __('No item type defined');
                     Dropdown::showItemTypes($name, $types, ['value' => $value]);
-                    $display = true;
-                    break;
-
-                case "dropdown_import_type":
-                    RuleAsset::dropdownImportType($name, $value);
                     $display = true;
                     break;
 
@@ -3000,7 +2999,7 @@ class Rule extends CommonDBTM
         $this->dropdownRulesMatch();
         echo "</td><td class='tab_bg_2 center'>";
         echo "<input type=hidden name='sub_type' value='" . get_class($this) . "'>";
-        echo "<input type=hidden name='entities_id' value='-1'>";
+        echo "<input type=hidden name='entities_id' value='0'>";
         echo "<input type=hidden name='affectentity' value='$ID'>";
         echo "<input type=hidden name='_method' value='AddRule'>";
         echo "<input type='submit' name='execute' value=\"" . _sx('button', 'Add') . "\" class='btn btn-primary'>";

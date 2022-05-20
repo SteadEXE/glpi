@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -91,7 +93,7 @@ class MailCollector extends DbTestCase
                 'expected'  => "With a \ncarriage return"
             ], [
                 'raw'       => 'We have a problem, <strong>URGENT</strong>',
-                'expected'  => 'We have a problem, &#60;strong&#62;URGENT&#60;/strong&#62;'
+                'expected'  => 'We have a problem, <strong>URGENT</strong>'
             ], [ //dunno why...
                 'raw'       => 'Subject with =20 character',
                 'expected'  => "Subject with \n character"
@@ -113,11 +115,17 @@ class MailCollector extends DbTestCase
 
     public function testListEncodings()
     {
-        $this
-         ->if($this->newTestedInstance)
-         ->then
-            ->array($this->testedInstance->listEncodings())
-               ->containsValues(['utf-8', 'iso-8859-1', 'iso-8859-14', 'cp1252']);
+        $this->newTestedInstance;
+
+        $this->when(
+            function () {
+                $this->array($this->testedInstance->listEncodings())
+                    ->containsValues(['utf-8', 'iso-8859-1', 'iso-8859-14', 'cp1252']);
+            }
+        )->error()
+           ->withType(E_USER_DEPRECATED)
+           ->withMessage('Called method is deprecated')
+           ->exists();
     }
 
     public function testPrepareInput()
@@ -577,19 +585,25 @@ class MailCollector extends DbTestCase
        // Collect all mails
         $this->doConnect();
         $this->collector->maxfetch_emails = 1000; // Be sure to fetch all mails from test suite
-        $msg = $this->collector->collect($this->mailgate_id);
+
+        $expected_errors = [
+            // 05-empty-from.eml
+            'The input is not a valid email address. Use the basic format local-part@hostname' => LogLevel::CRITICAL,
+            // 17-malformed-email.eml
+            'Header with Name date or date not found' => LogLevel::CRITICAL,
+        ];
+
+        $msg = null;
+        $this->output(
+            function () use (&$msg) {
+                $msg = $this->collector->collect($this->mailgate_id);
+            }
+        )->matches('/^(.*\n){' . count($expected_errors) . '}$/'); // Ensure that output has same count of lines than expected error count
 
         // Check error log and clean it (to prevent test failure, see GLPITestCase::afterTestMethod()).
-        // 05-empty-from.eml
-        $this->hasPhpLogRecordThatContains(
-            'The input is not a valid email address. Use the basic format local-part@hostname',
-            LogLevel::CRITICAL
-        );
-        // 17-malformed-email.eml
-        $this->hasPhpLogRecordThatContains(
-            'Header with Name date or date not found',
-            LogLevel::CRITICAL
-        );
+        foreach ($expected_errors as $error_message => $error_level) {
+            $this->hasPhpLogRecordThatContains($error_message, $error_level);
+        }
 
         $total_count                     = count(glob(GLPI_ROOT . '/tests/emails-tests/*.eml'));
         $expected_refused_count          = 3;
@@ -663,7 +677,7 @@ class MailCollector extends DbTestCase
                 'users_id'      => $nuid,
                 'actor_type'    => \CommonITILActor::REQUESTER,
                 'tickets_names' => [
-                    'Test import mail avec emoticons :smiley: unicode',
+                    'Test import mail avec emoticons 😃 unicode',
                     'Test images',
                     'Test\'ed issue',
                     'Test Email from Outlook',
@@ -681,6 +695,7 @@ class MailCollector extends DbTestCase
                     '25 - Test attachment with invalid chars for OS',
                     '26 Illegal char in body',
                     '28 Multiple attachments no extension',
+                    '30 - &#60;GLPI&#62; Special &#38; chars',
                 ]
             ],
          // Mails having "normal" user as observer (add_cc_to_observer = true)

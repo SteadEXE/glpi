@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -87,7 +89,7 @@ class Search
             $itemtype == "Ticket"
             && $default = Glpi\Dashboard\Grid::getDefaultDashboardForMenu('mini_ticket', true)
         ) {
-            $dashboard = new Glpi\Dashboard\Grid($default, 33, 1, 'mini_core');
+            $dashboard = new Glpi\Dashboard\Grid($default, 33, 1);
             $dashboard->show(true);
         }
 
@@ -190,8 +192,8 @@ class Search
             ];
             $globallinkto = Toolbox::append_params(
                 [
-                    'criteria'     => Toolbox::stripslashes_deep($criteria),
-                    'metacriteria' => Toolbox::stripslashes_deep($data['search']['metacriteria'])
+                    'criteria'     => Sanitizer::unsanitize($criteria),
+                    'metacriteria' => Sanitizer::unsanitize($data['search']['metacriteria'])
                 ],
                 '&amp;'
             );
@@ -323,7 +325,7 @@ class Search
                );
             }).fail(function (response) {
                var _data = response.responseJSON;
-               var _message = '" . __s('An error occured loading data :(') . "';
+               var _message = '" . __s('An error occurred loading data :(') . "';
                if (_data.message) {
                   _message = _data.message;
                }
@@ -1204,8 +1206,8 @@ class Search
                 } else {
                     $tmplink = " AND ";
                 }
-               // Manage Link if not first item
-                if (!empty($sql)) {
+                // Manage Link if not first item
+                if (!empty($sql) && !$is_having) {
                     $sql .= $globallink;
                 }
                 $first2 = true;
@@ -1663,8 +1665,8 @@ class Search
 
        // Contruct parameters
         $globallinkto  = Toolbox::append_params([
-            'criteria'     => Toolbox::stripslashes_deep($search['criteria']),
-            'metacriteria' => Toolbox::stripslashes_deep($search['metacriteria'])
+            'criteria'     => Sanitizer::unsanitize($search['criteria']),
+            'metacriteria' => Sanitizer::unsanitize($search['metacriteria'])
         ], '&');
 
         $parameters = http_build_query([
@@ -1830,9 +1832,7 @@ class Search
             );
         }
        // End Line for column headers
-        if (!empty($headers_line)) {
-            $headers_line .= self::showEndLine($data['display_type']);
-        }
+        $headers_line .= self::showEndLine($data['display_type'], true);
 
         $headers_line_top    .= $headers_line;
         $headers_line_top    .= self::showEndHeader($data['display_type']);
@@ -2536,12 +2536,13 @@ class Search
         $idor_display_meta_criteria  = Session::getNewIDORToken($itemtype);
         $idor_display_criteria_group = Session::getNewIDORToken($itemtype);
 
+        $itemtype_escaped = addslashes($itemtype);
         $JS = <<<JAVASCRIPT
          $('#addsearchcriteria$rand_criteria').on('click', function(event) {
             event.preventDefault();
             $.post('{$CFG_GLPI['root_doc']}/ajax/search.php', {
                'action': 'display_criteria',
-               'itemtype': '$itemtype',
+               'itemtype': '$itemtype_escaped',
                'num': $nbsearchcountvar,
                'p': $json_p,
                '_idor_token': '$idor_display_criteria'
@@ -2556,7 +2557,7 @@ class Search
             event.preventDefault();
             $.post('{$CFG_GLPI['root_doc']}/ajax/search.php', {
                'action': 'display_meta_criteria',
-               'itemtype': '$itemtype',
+               'itemtype': '$itemtype_escaped',
                'meta': true,
                'num': $nbsearchcountvar,
                'p': $json_p,
@@ -2572,7 +2573,7 @@ class Search
             event.preventDefault();
             $.post('{$CFG_GLPI['root_doc']}/ajax/search.php', {
                'action': 'display_criteria_group',
-               'itemtype': '$itemtype',
+               'itemtype': '$itemtype_escaped',
                'meta': true,
                'num': $nbsearchcountvar,
                'p': $json_p,
@@ -2659,7 +2660,8 @@ JAVASCRIPT;
         $p           = $request['p'];
         $options     = self::getCleanedOptions($request["itemtype"]);
         $randrow     = mt_rand();
-        $rowid       = 'searchrow' . $request['itemtype'] . $randrow;
+        $normalized_itemtype = strtolower(str_replace('\\', '', $request["itemtype"]));
+        $rowid       = 'searchrow' . $normalized_itemtype . $randrow;
         $addclass    = $num == 0 ? ' headerRow' : '';
         $prefix      = isset($p['prefix_crit']) ? $p['prefix_crit'] : '';
         $parents_num = isset($p['parents_num']) ? $p['parents_num'] : [];
@@ -2792,7 +2794,7 @@ JAVASCRIPT;
         ]);
         echo "</div>";
         $field_id = Html::cleanId("dropdown_criteria{$prefix}[$num][field]$rand");
-        $spanid   = Html::cleanId('SearchSpan' . $request["itemtype"] . $prefix . $num);
+        $spanid   = Html::cleanId('SearchSpan' . $normalized_itemtype . $prefix . $num);
 
         echo "<div class='col-auto'>";
         echo "<div class='row g-1' id='$spanid'>";
@@ -2807,7 +2809,7 @@ JAVASCRIPT;
                      ? $criteria['searchtype']
                      : "";
         $p_value    = isset($criteria['value'])
-                     ? stripslashes($criteria['value'])
+                     ? Sanitizer::dbUnescape($criteria['value'])
                      : "";
 
         $params = [
@@ -3141,8 +3143,9 @@ JAVASCRIPT;
         }
 
         $rands = -1;
+        $normalized_itemtype = strtolower(str_replace('\\', '', $request["itemtype"]));
         $dropdownname = Html::cleanId("spansearchtype$fieldname" .
-                                    $request["itemtype"] .
+                                    $normalized_itemtype .
                                     $prefix .
                                     $num);
         $searchopt = [];
@@ -3165,7 +3168,7 @@ JAVASCRIPT;
 
         echo "<div class='col-auto' id='$dropdownname' data-itemtype='{$request["itemtype"]}' data-fieldname='$fieldname' data-prefix='$prefix' data-num='$num'>";
         $params = [
-            'value'       => rawurlencode(stripslashes($request['value'])),
+            'value'       => rawurlencode(Sanitizer::dbUnescape($request['value'])),
             'searchopt'   => $searchopt,
             'searchtype'  => $request["searchtype"],
             'num'         => $num,
@@ -3394,6 +3397,11 @@ JAVASCRIPT;
 
        // Preformat items
         if (isset($searchopt[$ID]["datatype"])) {
+            if ($searchopt[$ID]["datatype"] == "mio") {
+                // Parse value as it may contain a few different formats
+                $val = Toolbox::getMioSizeFromString($val);
+            }
+
             switch ($searchopt[$ID]["datatype"]) {
                 case "datetime":
                     if (in_array($searchtype, ['contains', 'notcontains'])) {
@@ -3426,6 +3434,7 @@ JAVASCRIPT;
                     return " {$LINK} ({$DB->quoteName($NAME)} $operator {$DB->quoteValue($val)}) ";
                 break;
                 case "count":
+                case "mio":
                 case "number":
                 case "decimal":
                 case "timestamp":
@@ -3507,6 +3516,9 @@ JAVASCRIPT;
 
         foreach ($sort_fields as $sort_field) {
             $ID = $sort_field['searchopt_id'];
+            if (isset($searchopt[$ID]['nosort']) && $searchopt[$ID]['nosort']) {
+                continue;
+            }
             $order = $sort_field['order'] ?? 'ASC';
            // Order security check
             if ($order != 'ASC') {
@@ -3642,6 +3654,9 @@ JAVASCRIPT;
             $orderby_criteria[] = $criterion ?? "`ITEM_{$itemtype}_{$ID}` $order";
         }
 
+        if (count($orderby_criteria) === 0) {
+            return '';
+        }
         return ' ORDER BY ' . implode(', ', $orderby_criteria) . ' ';
     }
 
@@ -3810,7 +3825,7 @@ JAVASCRIPT;
         $tocompute      = "`$table$addtable`.`$field`";
         $tocomputeid    = "`$table$addtable`.`id`";
 
-        $tocomputetrans = "IFNULL(`$table" . $addtable . "_trans`.`value`,'" . self::NULLVALUE . "') ";
+        $tocomputetrans = "IFNULL(`$table" . $addtable . "_trans_" . $field . "`.`value`,'" . self::NULLVALUE . "') ";
 
         $ADDITONALFIELDS = '';
         if (
@@ -4071,7 +4086,7 @@ JAVASCRIPT;
                             $TRANS = "GROUP_CONCAT(DISTINCT CONCAT(IFNULL($tocomputetrans, '" . self::NULLVALUE . "'),
                                                              '" . self::SHORTSEP . "',$tocomputeid) ORDER BY $tocomputeid
                                              SEPARATOR '" . self::LONGSEP . "')
-                                     AS `" . $NAME . "_trans`, ";
+                                     AS `" . $NAME . "_trans_" . $field . "`, ";
                         }
 
                         return " GROUP_CONCAT(DISTINCT CONCAT($tocompute, '" . self::SHORTSEP . "' ,
@@ -4098,7 +4113,7 @@ JAVASCRIPT;
             if (Session::haveTranslations(getItemTypeForTable($table), $field)) {
                 $TRANS = "GROUP_CONCAT(DISTINCT CONCAT(IFNULL($tocomputetrans, '" . self::NULLVALUE . "'),
                                                    '" . self::SHORTSEP . "',$tocomputeid) ORDER BY $tocomputeid SEPARATOR '" . self::LONGSEP . "')
-                                  AS `" . $NAME . "_trans`, ";
+                                  AS `" . $NAME . "_trans_" . $field . "`, ";
             }
             return " GROUP_CONCAT(DISTINCT CONCAT(IFNULL($tocompute, '" . self::NULLVALUE . "'),
                                                '" . self::SHORTSEP . "',$tocomputeid) ORDER BY $tocomputeid SEPARATOR '" . self::LONGSEP . "')
@@ -4108,7 +4123,7 @@ JAVASCRIPT;
         }
         $TRANS = '';
         if (Session::haveTranslations(getItemTypeForTable($table), $field)) {
-            $TRANS = $tocomputetrans . " AS `" . $NAME . "_trans`, ";
+            $TRANS = $tocomputetrans . " AS `" . $NAME . "_trans_" . $field . "`, ";
         }
         return "$tocompute AS `" . $NAME . "`, $TRANS $ADDITONALFIELDS";
     }
@@ -4522,17 +4537,17 @@ JAVASCRIPT;
 
             case "equals":
                 if ($nott) {
-                    $SEARCH = " <> '$val'";
+                    $SEARCH = " <> " . DBmysql::quoteValue($val);
                 } else {
-                    $SEARCH = " = '$val'";
+                    $SEARCH = " = " . DBmysql::quoteValue($val);
                 }
                 break;
 
             case "notequals":
                 if ($nott) {
-                    $SEARCH = " = '$val'";
+                    $SEARCH = " = " . DBmysql::quoteValue($val);
                 } else {
-                    $SEARCH = " <> '$val'";
+                    $SEARCH = " <> " . DBmysql::quoteValue($val);
                 }
                 break;
 
@@ -4891,7 +4906,7 @@ JAVASCRIPT;
         }
 
         $tocompute      = "`$table`.`$field`";
-        $tocomputetrans = "`" . $table . "_trans`.`value`";
+        $tocomputetrans = "`" . $table . "_trans_" . $field . "`.`value`";
         if (isset($searchopt[$ID]["computation"])) {
             $tocompute = $searchopt[$ID]["computation"];
             $tocompute = str_replace($DB->quoteName('TABLE'), 'TABLE', $tocompute);
@@ -4900,6 +4915,11 @@ JAVASCRIPT;
 
        // Preformat items
         if (isset($searchopt[$ID]["datatype"])) {
+            if ($searchopt[$ID]["datatype"] == "mio") {
+                // Parse value as it may contain a few different formats
+                $val = Toolbox::getMioSizeFromString($val);
+            }
+
             switch ($searchopt[$ID]["datatype"]) {
                 case "itemtypename":
                     if (in_array($searchtype, ['equals', 'notequals'])) {
@@ -5013,6 +5033,7 @@ JAVASCRIPT;
                    // No break here : use number comparaison case
 
                 case "count":
+                case "mio":
                 case "number":
                 case "decimal":
                 case "timestamp":
@@ -5464,7 +5485,7 @@ JAVASCRIPT;
         ) {
             $transitemtype = getItemTypeForTable($new_table);
             if (Session::haveTranslations($transitemtype, $field)) {
-                $transAS            = $nt . '_trans';
+                $transAS            = $nt . '_trans_' . $field;
                 return self::joinDropdownTranslations(
                     $transAS,
                     $nt,
@@ -5726,7 +5747,7 @@ JAVASCRIPT;
                                               $addcondition)";
                         $transitemtype = getItemTypeForTable($new_table);
                         if (Session::haveTranslations($transitemtype, $field)) {
-                            $transAS            = $nt . '_trans';
+                            $transAS            = $nt . '_trans_' . $field;
                             $specific_leftjoin .= self::joinDropdownTranslations(
                                 $transAS,
                                 $nt,
@@ -6044,14 +6065,44 @@ JAVASCRIPT;
             case "glpi_tickets.internal_time_to_resolve":
             case "glpi_problems.time_to_resolve":
             case "glpi_changes.time_to_resolve":
+                if (in_array($ID, [151, 181])) {
+                    break; // Skip "TTR + progress" search options
+                }
+
+                $value      = $data[$NAME][0]['name'];
+                $status     = $data[$NAME][0]['status'];
+                $solve_date = $data[$NAME][0]['solvedate'];
+
+                $is_late = !empty($value)
+                    && $status != CommonITILObject::WAITING
+                    && (
+                        $solve_date > $value
+                        || ($solve_date == null && $value < $_SESSION['glpi_currenttime'])
+                    );
+
+                if ($is_late) {
+                    $out = " class=\"shadow-none\" style=\"background-color: #cf9b9b\" ";
+                }
+                break;
             case "glpi_tickets.time_to_own":
             case "glpi_tickets.internal_time_to_own":
-                if (
-                    !in_array($ID, [151, 158, 181, 186])
-                    && !empty($data[$NAME][0]['name'])
-                    && ($data[$NAME][0]['status'] != CommonITILObject::WAITING)
-                    && ($data[$NAME][0]['name'] < $_SESSION['glpi_currenttime'])
-                ) {
+                if (in_array($ID, [158, 186])) {
+                    break; // Skip "TTO + progress" search options
+                }
+
+                $value        = $data[$NAME][0]['name'];
+                $status       = $data[$NAME][0]['status'];
+                $opening_date = $data[$NAME][0]['date'];
+                $tia_time     = $data[$NAME][0]['takeintoaccount_delay_stat'];
+
+                $is_late = !empty($value)
+                    && $status != CommonITILObject::WAITING
+                    && (
+                        $tia_time > strtotime($opening_date) - strtotime($value)
+                        || ($tia_time == 0 && $value < $_SESSION['glpi_currenttime'])
+                    );
+
+                if ($is_late) {
                     $out = " class=\"shadow-none\" style=\"background-color: #cf9b9b\" ";
                 }
                 break;
@@ -6268,12 +6319,16 @@ JAVASCRIPT;
                         return sprintf(__('%1$s %2$s'), $usernameformat, $toadd);
                     }
 
-                    return TemplateRenderer::getInstance()->render('components/user/picture.html.twig', [
-                        'users_id'      => $data['id'],
-                        'display_login' => true,
-                        'force_login'   => true,
-                        'avatar_size'   => "avatar-sm",
-                    ]);
+                    $current_users_id = $data[$ID][0]['id'] ?? 0;
+                    if ($current_users_id > 0) {
+                        return TemplateRenderer::getInstance()->render('components/user/picture.html.twig', [
+                            'users_id'      => $current_users_id,
+                            'display_login' => true,
+                            'force_login'   => true,
+                            'avatar_size'   => "avatar-sm",
+                        ]);
+                    }
+                    break;
 
                 case "glpi_profiles.name":
                     if (
@@ -6369,7 +6424,7 @@ JAVASCRIPT;
                             }
                         }
                         return $out;
-                    } else if (($so["datatype"] ?? "") != "itemlink") {
+                    } else if (($so["datatype"] ?? "") != "itemlink" && !empty($data[$ID][0]['name'])) {
                         return Entity::badgeCompletename($data[$ID][0]['name']);
                     }
                     break;
@@ -6395,7 +6450,12 @@ JAVASCRIPT;
                         $linkid = ($data[$ID][$k]['tickets_id_2'] == $data['id'])
                                  ? $data[$ID][$k]['name']
                                  : $data[$ID][$k]['tickets_id_2'];
-                        if (($linkid > 0) && !isset($displayed[$linkid])) {
+
+                        // If link ID is int or integer string, force conversion to int. Coversion to int and then string to compare is needed to ensure it isn't a decimal
+                        if (is_numeric($linkid) && ((string)(int)$linkid === (string)$linkid)) {
+                            $linkid = (int) $linkid;
+                        }
+                        if ((is_int($linkid) && $linkid > 0) && !isset($displayed[$linkid])) {
                              $text  = "<a ";
                              $text .= "href=\"" . Ticket::getFormURLWithID($linkid) . "\">";
                              $text .= Dropdown::getDropdownName('glpi_tickets', $linkid) . "</a>";
@@ -7003,7 +7063,8 @@ JAVASCRIPT;
                             }
                             $count_display++;
 
-                            $plaintext = RichText::getTextFromHtml($data[$ID][$k]['name'], false, true);
+
+                            $plaintext = RichText::getTextFromHtml($data[$ID][$k]['name'], false, true, self::$output_type == self::HTML_OUTPUT);
 
                             if (self::$output_type == self::HTML_OUTPUT && (Toolbox::strlen($plaintext) > $CFG_GLPI['cut'])) {
                                 $rand = mt_rand();
@@ -7111,6 +7172,7 @@ JAVASCRIPT;
 
                 case "count":
                 case "number":
+                case "mio":
                     $out           = "";
                     $count_display = 0;
                     for ($k = 0; $k < $data[$ID]['count']; $k++) {
@@ -7205,7 +7267,7 @@ JAVASCRIPT;
                         {$progressbar_data['percent_text']}%
                      </div>
                   </div>
-                  HTML;
+HTML;
                     }
 
                     return $out;
@@ -7260,7 +7322,10 @@ JAVASCRIPT;
                         if (isset($data[$ID][$k]['trans']) && !empty($data[$ID][$k]['trans'])) {
                             $out .= $data[$ID][$k]['trans'];
                         } else {
-                            $out .= $data[$ID][$k]['name'];
+                            $value = $data[$ID][$k]['name'];
+                            $out .= $value !== null && $so['field'] === 'completename'
+                                ? CommonTreeDropdown::sanitizeSeparatorInCompletename($value)
+                                : $value;
                         }
                     }
                 }
@@ -7908,6 +7973,7 @@ JAVASCRIPT;
 
             if (isset($searchopt[$field_num]['datatype'])) {
                 switch ($searchopt[$field_num]['datatype']) {
+                    case 'mio':
                     case 'count':
                     case 'number':
                         $opt = [
@@ -8037,7 +8103,7 @@ JAVASCRIPT;
                 global $PDF_TABLE;
                 $PDF_TABLE .= "<th $options>";
                 $PDF_TABLE .= htmlspecialchars($value);
-                $PDF_TABLE .= "</th>\n";
+                $PDF_TABLE .= "</th>";
                 break;
 
             case self::SYLK_OUTPUT: //sylk
@@ -8089,17 +8155,22 @@ JAVASCRIPT;
     {
 
         $out = "";
+        // Handle null values
+        if ($value === null) {
+            $value = '';
+        }
+
         switch ($type) {
             case self::PDF_OUTPUT_LANDSCAPE: //pdf
             case self::PDF_OUTPUT_PORTRAIT:
                 global $PDF_TABLE;
-                $value = DataExport::normalizeValueForTextExport($value);
+                $value = DataExport::normalizeValueForTextExport($value ?? '');
                 $value = htmlspecialchars($value);
                 $value = preg_replace('/' . self::LBBR . '/', '<br>', $value);
                 $value = preg_replace('/' . self::LBHR . '/', '<hr>', $value);
                 $PDF_TABLE .= "<td $extraparam valign='top'>";
                 $PDF_TABLE .= $value;
-                $PDF_TABLE .= "</td>\n";
+                $PDF_TABLE .= "</td>";
 
                 break;
 
@@ -8247,21 +8318,16 @@ JAVASCRIPT;
 
                 $pdf = new GLPIPDF(
                     [
-                        'default_font_size'  => $fontsize,
-                        'default_font'       => $font,
+                        'font_size'  => $fontsize,
+                        'font'       => $font,
                         'orientation'        => $type == self::PDF_OUTPUT_LANDSCAPE ? 'L' : 'P',
-                    ]
+                    ],
+                    $count,
+                    $title,
                 );
-                if ($count !== null) {
-                     $pdf->setTotalCount($count);
-                }
-                $pdf->SetTitle($title);
 
-                $pdf->SetFont($font, '', $fontsize);
-
-                $pdf->AddPage();
                 $PDF_TABLE .= '</table>';
-                $pdf->writeHTML($PDF_TABLE);
+                $pdf->writeHTML($PDF_TABLE, true, false, true);
                 $pdf->Output('glpi.pdf', 'I');
                 break;
 
@@ -8463,7 +8529,7 @@ JAVASCRIPT;
                 if ($odd) {
                     $style = " style=\"background-color:#DDDDDD;\" ";
                 }
-                $PDF_TABLE .= "<tr $style>";
+                $PDF_TABLE .= "<tr $style nobr=\"true\">";
                 break;
 
             case self::SYLK_OUTPUT: //sylk
@@ -8489,7 +8555,7 @@ JAVASCRIPT;
      *
      * @return string HTML to display
      **/
-    public static function showEndLine($type)
+    public static function showEndLine($type, bool $is_header_line = false)
     {
 
         $out = "";
@@ -8505,7 +8571,11 @@ JAVASCRIPT;
 
             case self::CSV_OUTPUT: //csv
             case self::NAMES_OUTPUT:
-                $out = "\n";
+                // NAMES_OUTPUT has no output on header lines
+                $newline = $type != self::NAMES_OUTPUT || !$is_header_line;
+                if ($newline) {
+                    $out = "\n";
+                }
                 break;
 
             default:
@@ -8597,7 +8667,7 @@ JAVASCRIPT;
     {
 
         $value = preg_replace('/\x0A/', ' ', $value);
-        $value = preg_replace('/\x0D/', null, $value);
+        $value = preg_replace('/\x0D/', '', $value);
         $value = str_replace("\"", "''", $value);
         $value = str_replace("\n", " | ", $value);
 
@@ -8645,8 +8715,10 @@ JAVASCRIPT;
      **/
     public static function makeTextSearchValue($val)
     {
-       // Unclean to permit < and > search
-        $val = Sanitizer::unsanitize($val);
+        // `$val` will mostly comes from sanitized input, but may also be raw value.
+        // 1. Unsanitize value to be sure to use raw value.
+        // 2. Escape raw value to protect SQL special chars.
+        $val = Sanitizer::dbEscape(Sanitizer::unsanitize($val));
 
        // escape _ char used as wildcard in mysql likes
         $val = str_replace('_', '\\_', $val);
@@ -8706,7 +8778,7 @@ JAVASCRIPT;
         if ($val == null) {
             $SEARCH = " IS $NOT NULL ";
         } else {
-            $SEARCH = " $NOT LIKE '$val' ";
+            $SEARCH = " $NOT LIKE " . DBmysql::quoteValue($val) . " ";
         }
         return $SEARCH;
     }

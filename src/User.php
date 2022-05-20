@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -829,7 +831,7 @@ class User extends CommonDBTM
             }
             if ($newPicture) {
                 $fullpath = GLPI_TMP_DIR . "/" . $input["_picture"];
-                if (Toolbox::getMime($fullpath, 'image')) {
+                if (Document::isImage($fullpath, 'image')) {
                    // Unlink old picture (clean on changing format)
                     self::dropPictureFiles($this->fields['picture']);
                    // Move uploaded file
@@ -846,10 +848,7 @@ class User extends CommonDBTM
                     $picture_path = GLPI_PICTURE_DIR  . "/$sub/${filename}.$extension";
                     self::dropPictureFiles("$sub/${filename}.$extension");
 
-                    if (
-                        Document::isImage($fullpath)
-                        && Document::renameForce($fullpath, $picture_path)
-                    ) {
+                    if (Document::renameForce($fullpath, $picture_path)) {
                         Session::addMessageAfterRedirect(__('The file is valid. Upload is successful.'));
                         // For display
                         $input['picture'] = "$sub/${filename}.$extension";
@@ -859,10 +858,11 @@ class User extends CommonDBTM
                         Toolbox::resizePicture($picture_path, $thumb_path);
                     } else {
                         Session::addMessageAfterRedirect(
-                            __('Potential upload attack or file too large. Moving temporary file failed.'),
+                            __('Moving temporary file failed.'),
                             false,
                             ERROR
                         );
+                        @unlink($fullpath);
                     }
                 } else {
                     Session::addMessageAfterRedirect(
@@ -870,6 +870,7 @@ class User extends CommonDBTM
                         false,
                         ERROR
                     );
+                    @unlink($fullpath);
                 }
             } else {
                //ldap jpegphoto synchronisation.
@@ -1767,6 +1768,7 @@ class User extends CommonDBTM
            // force authtype as we retrieve this user by ldap (we could have login with SSO)
             $this->fields["authtype"] = Auth::LDAP;
 
+            $import_fields = [];
             foreach ($fields as $k => $e) {
                 $val = AuthLDAP::getFieldValue(
                     [$e => self::getLdapFieldValue($e, $v)],
@@ -1815,29 +1817,10 @@ class User extends CommonDBTM
                             break;
 
                         case "usertitles_id":
-                            $this->fields[$k] = Dropdown::importExternal('UserTitle', $val);
-                            break;
-
                         case 'locations_id':
-                           // use import to build the location tree
-                            $this->fields[$k] = Dropdown::import(
-                                'Location',
-                                ['completename' => $val,
-                                    'entities_id'  => 0,
-                                    'is_recursive' => 1
-                                ]
-                            );
-                            break;
-
                         case "usercategories_id":
-                            $this->fields[$k] = Dropdown::importExternal('UserCategory', $val);
-                            break;
-
                         case 'users_id_supervisor':
-                            $supervisor_id = self::getIdByField('user_dn', $val, false);
-                            if ($supervisor_id) {
-                                $this->fields[$k] = $supervisor_id;
-                            }
+                            $import_fields[$k] = $val;
                             break;
 
                         default:
@@ -1936,6 +1919,33 @@ class User extends CommonDBTM
                     }
                 }
 
+                foreach ($import_fields as $k => $val) {
+                    switch ($k) {
+                        case "usertitles_id":
+                            $this->fields[$k] = Dropdown::importExternal('UserTitle', $val);
+                            break;
+                        case 'locations_id':
+                            // use import to build the location tree
+                            $this->fields[$k] = Dropdown::import(
+                                'Location',
+                                ['completename' => $val,
+                                    'entities_id'  => 0,
+                                    'is_recursive' => 1
+                                ]
+                            );
+                            break;
+                        case "usercategories_id":
+                            $this->fields[$k] = Dropdown::importExternal('UserCategory', $val);
+                            break;
+                        case 'users_id_supervisor':
+                            $supervisor_id = self::getIdByField('user_dn', $val, false);
+                            if ($supervisor_id) {
+                                $this->fields[$k] = $supervisor_id;
+                            }
+                            break;
+                    }
+                }
+
                // Add ldap result to data send to the hook
                 $this->fields['_ldap_result'] = $v;
                 $this->fields['_ldap_conn']   = $ldap_connection;
@@ -1943,6 +1953,7 @@ class User extends CommonDBTM
                 $this->fields = Plugin::doHookFunction(Hooks::RETRIEVE_MORE_DATA_FROM_LDAP, $this->fields);
                 unset($this->fields['_ldap_result']);
             }
+
             return true;
         }
         return false;
@@ -2298,24 +2309,24 @@ class User extends CommonDBTM
             $vcard_url = User::getFormURLWithID($ID) . "&amp;getvcard=1";
             $vcard_btn = <<<HTML
             <a href="{$vcard_url}" target="_blank"
-                     class="btn btn-sm btn-ghost-secondary"
+                     class="btn btn-icon btn-sm btn-ghost-secondary"
                      title="{$vcard_lbl}"
                      data-bs-toggle="tooltip" data-bs-placement="bottom">
                <i class="far fa-address-card fa-lg"></i>
             </a>
-         HTML;
+HTML;
             $header_toolbar[] = $vcard_btn;
 
             if (Session::canImpersonate($ID)) {
                 $impersonate_lbl = __s('Impersonate');
                 $impersonate_btn = <<<HTML
                <button type="button" name="impersonate" value="1"
-                       class="btn btn-sm btn-ghost-secondary btn-impersonate"
+                       class="btn btn-icon btn-sm btn-ghost-secondary btn-impersonate"
                        title="{$impersonate_lbl}"
                        data-bs-toggle="tooltip" data-bs-placement="bottom">
                   <i class="fas fa-user-secret fa-lg"></i>
                </button>
-            HTML;
+HTML;
 
                // "impersonate" button type is set to "button" on form display to prevent it to be used
                // by default (as it is the first found in current form) when pressing "enter" key.
@@ -3797,6 +3808,9 @@ JAVASCRIPT;
             'name'               => __('Responsible'),
             'datatype'           => 'dropdown',
             'massiveaction'      => false,
+            'additionalfields'   => [
+                '0' => 'id'
+            ]
         ];
 
        // add objectlock search options
@@ -3915,6 +3929,8 @@ JAVASCRIPT;
         $with_no_right = 0
     ) {
         global $DB;
+
+
 
        // No entity define : use active ones
         if ($entity_restrict < 0) {
@@ -4170,6 +4186,14 @@ JAVASCRIPT;
             ];
         }
 
+        // remove helpdesk user
+        $config = Config::getConfigurationValues('core');
+        $WHERE[] = [
+            'NOT' => [
+                'glpi_users.id' => $config['system_user']
+            ]
+        ];
+
         $criteria = [
             'FROM'            => 'glpi_users',
             'LEFT JOIN'       => [
@@ -4381,7 +4405,7 @@ JAVASCRIPT;
         }
 
         if ($p['readonly']) {
-            return $user["name"];
+            return '<span class="form-control" readonly>' . $user["name"] . '</span>';
         }
 
         $view_users = self::canView();
@@ -6261,7 +6285,7 @@ JAVASCRIPT;
         );
         echo "</td>";
 
-        echo "<td rowspan='3'>" . __('Picture') . "</td>";
+        echo "<td rowspan='3'>" . _n('Picture', 'Pictures', 1) . "</td>";
         echo "<td rowspan='3'>";
         echo self::getPictureForUser($ID);
 

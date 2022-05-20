@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -709,5 +711,24 @@ class Item_Disk extends CommonDBChild
         }
 
         return parent::getSpecificValueToDisplay($field, $values, $options);
+    }
+
+    public function getNonLoggedFields(): array
+    {
+        // we don't want to log at all changes of available space for a drive
+        // as it's likely to change every time
+        $exclude = [
+            'freesize',
+        ];
+
+        // logging total size of zfs mount points make no sense as it's equal to the used space of the point + available space for the pool
+        // it's likely to have this key changing on each automatic inventory
+        // so we don't want to pollute logs with these frequent changes.
+        // to note, `$this->input['filesystem']` will only be present on inventory request
+        if (in_array(($this->input['filesystem'] ?? ""), ['zfs', 'fuse.zfs'])) {
+            $exclude[] = 'totalsize';
+        }
+
+        return $exclude;
     }
 }

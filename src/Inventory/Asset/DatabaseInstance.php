@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -137,14 +139,14 @@ class DatabaseInstance extends InventoryAsset
                         'itemtype'     => $this->item->getType(),
                         'items_id'     => $this->item->fields['id']
                     ];
-                    $items_id = $instance->add(Toolbox::addslashes_deep($input), [], $this->withHistory());
+                    $items_id = $instance->add(Toolbox::addslashes_deep($input));
                 } else {
                     $items_id = $data['found_inventories'][0];
                     $databases = $val->databases ?? [];
 
                     $instance->getFromDB($items_id);
                     $input += ['id' => $instance->fields['id']];
-                    $instance->update(Toolbox::addslashes_deep($input), $this->withHistory());
+                    $instance->update(Toolbox::addslashes_deep($input));
 
                     $existing_databases = $instance->getDatabases();
                    //update databases, relying on name
@@ -152,8 +154,8 @@ class DatabaseInstance extends InventoryAsset
                         foreach ($databases as $key => $database) {
                             if ($existing_database['name'] == $database->name) {
                                  $dbinput = (array)$database;
-                                 $dbinput += ['id' => $dbkey, 'is_deleted' => 0];
-                                 $odatabase->update(Toolbox::addslashes_deep($dbinput), [], $this->withHistory());
+                                 $dbinput += ['id' => $dbkey, 'is_deleted' => 0, 'is_dynamic' => 1];
+                                 $odatabase->update(Toolbox::addslashes_deep($dbinput));
                                  unset(
                                      $existing_databases[$dbkey],
                                      $databases[$key]
@@ -166,7 +168,7 @@ class DatabaseInstance extends InventoryAsset
                    //cleanup associated databases
                     if (count($existing_databases)) {
                         foreach ($existing_databases as $dbkey => $existing_database) {
-                            $odatabase->delete(['id' => $dbkey], false, $this->withHistory());
+                            $odatabase->delete(['id' => $dbkey]);
                         }
                     }
                 }
@@ -175,9 +177,10 @@ class DatabaseInstance extends InventoryAsset
                 foreach ($databases as $database) {
                     $dbinput = (array)$database;
                     $dbinput += [
-                        'databaseinstances_id' => $instance->fields['id']
+                        'databaseinstances_id' => $instance->fields['id'],
+                        'is_dynamic' => 1
                     ];
-                    $odatabase->add(Toolbox::addslashes_deep($dbinput), [], $this->withHistory());
+                    $odatabase->add(Toolbox::addslashes_deep($dbinput));
                 }
 
                 $instances[$items_id] = $items_id;

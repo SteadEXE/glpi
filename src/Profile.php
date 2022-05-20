@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -69,6 +71,47 @@ class Profile extends CommonDBTM
 
     public static $rightname             = 'profile';
 
+    /**
+     * Profile rights to update after profile update.
+     * @var array
+     */
+    private $profileRight;
+
+    public function __get(string $property)
+    {
+        $value = null;
+        switch ($property) {
+            case 'profileRight':
+                Toolbox::deprecated(sprintf('Reading private property %s::%s is deprecated', __CLASS__, $property));
+                $value = $this->$property;
+                break;
+            default:
+                $trace = debug_backtrace();
+                trigger_error(
+                    sprintf('Undefined property: %s::%s in %s on line %d', __CLASS__, $property, $trace[0]['file'], $trace[0]['line']),
+                    E_USER_WARNING
+                );
+                break;
+        }
+        return $value;
+    }
+
+    public function __set(string $property, $value)
+    {
+        switch ($property) {
+            case 'profileRight':
+                Toolbox::deprecated(sprintf('Writing private property %s::%s is deprecated', __CLASS__, $property));
+                $this->$property = $value;
+                break;
+            default:
+                $trace = debug_backtrace();
+                trigger_error(
+                    sprintf('Undefined property: %s::%s in %s on line %d', __CLASS__, $property, $trace[0]['file'], $trace[0]['line']),
+                    E_USER_WARNING
+                );
+                break;
+        }
+    }
 
 
     public function getForbiddenStandardMassiveAction()
@@ -188,7 +231,7 @@ class Profile extends CommonDBTM
 
         if (count($this->profileRight) > 0) {
             ProfileRight::updateProfileRights($this->getID(), $this->profileRight);
-            unset($this->profileRight);
+            $this->profileRight = null;
         }
 
         if (in_array('is_default', $this->updates) && ($this->input["is_default"] == 1)) {
@@ -227,7 +270,7 @@ class Profile extends CommonDBTM
 
         $rights = ProfileRight::getAllPossibleRights();
         ProfileRight::updateProfileRights($this->fields['id'], $rights);
-        unset($this->profileRight);
+        $this->profileRight = null;
 
         if (isset($this->fields['is_default']) && ($this->fields["is_default"] == 1)) {
             $DB->update(

@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -55,6 +57,7 @@ class Database extends CommonDBChild
         $ong = [];
         $this->addDefaultFormTab($ong)
          ->addImpactTab($ong, $options)
+         ->addStandardTab('Infocom', $ong, $options)
          ->addStandardTab('Document_Item', $ong, $options)
          ->addStandardTab('KnowbaseItem_Item', $ong, $options)
          ->addStandardTab('Ticket', $ong, $options)
@@ -62,6 +65,7 @@ class Database extends CommonDBChild
          ->addStandardTab('Change_Item', $ong, $options)
          ->addStandardTab('Notepad', $ong, $options)
          ->addStandardTab('Domain_Item', $ong, $options)
+         ->addStandardTab('Appliance_Item', $ong, $options)
          ->addStandardTab('Log', $ong, $options);
         return $ong;
     }
@@ -261,6 +265,14 @@ class Database extends CommonDBChild
             ]
         ];
 
+        $tab[] = [
+            'id'                 => '13',
+            'table'              => $this->getTable(),
+            'field'              => 'is_dynamic',
+            'name'               => __('Dynamic'),
+            'datatype'           => 'bool'
+        ];
+
         return $tab;
     }
 
@@ -341,6 +353,21 @@ class Database extends CommonDBChild
             'joinparams'         => [
                 'jointype'           => 'child'
             ]
+        ];
+
+        $tab[] = [
+            'id'                 => '174',
+            'table'              => self::getTable(),
+            'field'              => 'is_dynamic',
+            'linkfield'          => '',
+            'name'               => __('Dynamic'),
+            'datatype'           => 'bool',
+            'joinparams'         => [
+                'jointype'           => 'child'
+            ],
+            'massiveaction'      => false,
+            'forcegroupby'       => true,
+            'searchtype'         => ['equals']
         ];
 
         return $tab;
@@ -430,6 +457,7 @@ class Database extends CommonDBChild
             $header .= "<th>" . sprintf(__('%1$s (%2$s)'), __('Size'), __('Mio')) . "</th>";
             $header .= "<th>" . __('Is active') . "</th>";
             $header .= "<th>" . __('Has backup') . "</th>";
+            $header .= "<th>" . __('Is dynamic') . "</th>";
             $header .= "</tr>";
             echo $header;
 
@@ -441,6 +469,7 @@ class Database extends CommonDBChild
                 echo "<td>" . $row['size'] . "</td>";
                 echo "<td>" . Dropdown::getYesNo($db->fields['is_active']) . "</td>";
                 echo "<td>" . Dropdown::getYesNo($db->fields['is_onbackup']) . "</td>";
+                echo "<td>" . Dropdown::getYesNo($db->fields['is_dynamic']) . "</td>";
                 echo "</tr>";
                 Session::addToNavigateListItems('DatabaseInstance', $row['id']);
             }

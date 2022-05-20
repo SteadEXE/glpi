@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -176,13 +178,9 @@ class Dropdown
         }
 
         if ($params['readonly']) {
-            if ($params['multiple']) {
-                // Multiple values, print the names separated by commas
-                return implode(", ", $names);
-            } else {
-                // Single value, print the matching name
-                return $name;
-            }
+            return '<span class="form-control" readonly>'
+                . ($params['multiple'] ? implode(', ', $names) : $name)
+                . '</span>';
         }
 
        // Manage entity_sons
@@ -207,13 +205,12 @@ class Dropdown
             $params['condition'] = static::addNewCondition($params['condition']);
         }
 
-        if (!$item instanceof CommonTreeDropdown) {
-            if ($params['multiple']) {
-                $names = Sanitizer::unsanitize($names);
-            } else {
-                $name = Sanitizer::unsanitize($name);
-            }
+        if ($params['multiple']) {
+            $names = Sanitizer::unsanitize($names);
+        } else {
+            $name = Sanitizer::unsanitize($name);
         }
+
         $p = [
             'width'                => $params['width'],
             'itemtype'             => $itemtype,
@@ -283,6 +280,8 @@ class Dropdown
                 } else {
                     $options_tooltip['link']       = $item->getSearchURL();
                 }
+            } else {
+                $options_tooltip['awesome-class'] = 'btn btn-outline-secondary fa-info';
             }
 
             if (empty($comment)) {
@@ -299,7 +298,7 @@ class Dropdown
                 $paramscomment['withlink'] = $link_id;
             }
 
-           // Comment icon
+            // Comment icon
             $icons .= Ajax::updateItemOnSelectEvent(
                 $field_id,
                 $comment_id,
@@ -310,7 +309,7 @@ class Dropdown
             $options_tooltip['link_class'] = 'btn btn-outline-secondary';
             $icons .= Html::showToolTip($comment, $options_tooltip);
 
-           // Add icon
+            // Add icon
             if (
                 ($item instanceof CommonDropdown)
                 && $item->canCreate()
@@ -2055,7 +2054,7 @@ class Dropdown
                     $to_display[] = $elements[$value];
                 }
             }
-            $output .= implode('<br>', $to_display);
+            $output .= '<span class="form-control" readonly>' . implode(', ', $to_display) . '</span>';
         } else {
             $output  .= "<select name='$field_name' id='$field_id'";
 
@@ -2426,6 +2425,9 @@ class Dropdown
 
         $rand = mt_rand();
         Dropdown::showFromArray('display_type', $values, ['rand' => $rand]);
+        echo "<button type='submit' name='export' class='btn' " .
+             " title=\"" . _sx('button', 'Export') . "\">" .
+             "<i class='far fa-save'></i><span class='sr-only'>" . _sx('button', 'Export') . "<span>";
     }
 
 
@@ -2832,6 +2834,9 @@ class Dropdown
                         } else {
                             $outputval = $data['completename'];
                         }
+
+                        $outputval = CommonTreeDropdown::sanitizeSeparatorInCompletename($outputval);
+
                         $level = 0;
                     } else { // Need to check if parent is the good one
                         // Do not do if only get one item
@@ -2850,6 +2855,8 @@ class Dropdown
                                         // Do not do for first item for next page load
                                         if (!$firstitem) {
                                             $title = $item->fields['completename'];
+
+                                            $title = CommonTreeDropdown::sanitizeSeparatorInCompletename($title);
 
                                             $selection_text = $title;
 
@@ -2918,6 +2925,8 @@ class Dropdown
                         } else {
                             $title = $data['completename'];
                         }
+
+                        $title = CommonTreeDropdown::sanitizeSeparatorInCompletename($title);
 
                         $selection_text = $title;
 

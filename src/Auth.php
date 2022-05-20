@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -457,7 +459,7 @@ class Auth extends CommonGLPI
                 $groups_id = array_column($groups, 'id');
                 $result = $rules->processAllRules(
                     $groups_id,
-                    Toolbox::stripslashes_deep($this->user->fields),
+                    $this->user->fields,
                     [
                         'type'  => Auth::DB_GLPI,
                         'login' => $this->user->fields['name'],
@@ -964,27 +966,19 @@ class Auth extends CommonGLPI
                 }
             } else {
                 if ($this->user_present) {
-                   // First stripslashes to avoid double slashes
-                    $input = Toolbox::stripslashes_deep($this->user->fields);
-                   // Then ensure addslashes
-                    $input = Toolbox::addslashes_deep($input);
-
                    // Add the user e-mail if present
                     if (isset($email)) {
                          $this->user->fields['_useremails'] = $email;
                     }
-                    $this->user->update($input);
+                    $this->user->update(Sanitizer::sanitize($this->user->fields));
                 } else if ($CFG_GLPI["is_users_auto_add"]) {
                    // Auto add user
-                   // First stripslashes to avoid double slashes
-                    $input = Toolbox::stripslashes_deep($this->user->fields);
-                   // Then ensure addslashes
-                    $input = Toolbox::addslashes_deep($input);
+                    $input = $this->user->fields;
                     unset($this->user->fields);
                     if ($authtype == self::EXTERNAL && !isset($input["authtype"])) {
                         $input["authtype"] = $authtype;
                     }
-                    $this->user->add($input);
+                    $this->user->add(Sanitizer::sanitize($input));
                 } else {
                    // Auto add not enable so auth failed
                     $this->addToError(__('User not authorized to connect in GLPI'));
@@ -997,7 +991,7 @@ class Auth extends CommonGLPI
         if (!$DB->isSlave()) {
            // GET THE IP OF THE CLIENT
             $ip = getenv("HTTP_X_FORWARDED_FOR") ?
-            Sanitizer::sanitize(getenv("HTTP_X_FORWARDED_FOR"), false) :
+            Sanitizer::encodeHtmlSpecialChars(getenv("HTTP_X_FORWARDED_FOR")) :
             getenv("REMOTE_ADDR");
 
             if ($this->auth_succeded) {

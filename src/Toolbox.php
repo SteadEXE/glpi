@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -276,8 +278,8 @@ class Toolbox
      **/
     public static function clean_cross_side_scripting_deep($value)
     {
-        Toolbox::deprecated('Use "Glpi\Toolbox\Sanitizer::sanitize()"');
-        return Sanitizer::sanitize($value, false);
+        Toolbox::deprecated('Use "Glpi\Toolbox\Sanitizer::encodeHtmlSpecialCharsRecursive()"');
+        return Sanitizer::encodeHtmlSpecialCharsRecursive($value);
     }
 
 
@@ -294,9 +296,9 @@ class Toolbox
      **/
     public static function unclean_cross_side_scripting_deep($value)
     {
-        Toolbox::deprecated('Use "Glpi\Toolbox\Sanitizer::unsanitize()"');
+        Toolbox::deprecated('Use "Glpi\Toolbox\Sanitizer::decodeHtmlSpecialCharsRecursive()"');
         global $DB;
-        return $DB->escape(Sanitizer::unsanitize($value));
+        return $DB->escape(Sanitizer::decodeHtmlSpecialCharsRecursive($value));
     }
 
     /**
@@ -309,7 +311,7 @@ class Toolbox
     public static function getHtmLawedSafeConfig(): array
     {
         $config = [
-            'elements'         => '* -applet -canvas -embed -form -object -script',
+            'elements'         => '* -applet -canvas -embed -form -object -script -link',
             'deny_attribute'   => 'on*, srcdoc',
             'comment'          => 1, // 1: remove HTML comments (and do not display their contents)
             'cdata'            => 1, // 1: remove CDATA sections (and do not display their contents)
@@ -790,6 +792,8 @@ class Toolbox
                 $params[] = (!empty($parent) ? $parent . '%5B' . rawurlencode($k) . '%5D' : rawurlencode($k)) . '=' . rawurlencode($v);
             }
         }
+        //Remove empty values
+        $params = array_filter($params);
         return implode($separator, $params);
     }
 
@@ -2594,9 +2598,6 @@ class Toolbox
 
         if (count($doc_data)) {
             $base_path = $CFG_GLPI['root_doc'];
-            if (isCommandLine()) {
-                $base_path = parse_url($CFG_GLPI['url_base'], PHP_URL_PATH);
-            }
 
             foreach ($doc_data as $id => $image) {
                 if (isset($image['tag'])) {
@@ -2624,7 +2625,7 @@ class Toolbox
                       // 1 - Replace direct tag (with prefix and suffix) by the image
                         $content_text = preg_replace(
                             '/' . Document::getImageTag($image['tag']) . '/',
-                            Sanitizer::sanitize($img, false),
+                            Sanitizer::encodeHtmlSpecialChars($img),
                             $content_text
                         );
 
@@ -2666,7 +2667,7 @@ class Toolbox
                                 $new_image,
                                 Sanitizer::unsanitize($content_text)
                             );
-                            $content_text = Sanitizer::sanitize($content_text, false);
+                            $content_text = Sanitizer::encodeHtmlSpecialChars($content_text);
                         }
 
                         // If the tag is from another ticket : link document to ticket
@@ -2724,7 +2725,7 @@ class Toolbox
 
     /**
      * Decode JSON in GLPI
-     * Because json can have been modified from addslashes_deep
+     * Because json can have been modified from Sanitizer
      *
      * @param string $encoded Encoded JSON
      * @param boolean $assoc  assoc parameter of json_encode native function
@@ -2741,8 +2742,8 @@ class Toolbox
         $json = json_decode($encoded, $assoc);
 
         if (json_last_error() != JSON_ERROR_NONE) {
-           //something went wrong... Try to stripslashes before decoding.
-            $json = json_decode(self::stripslashes_deep($encoded), $assoc);
+           //something went wrong... Try to unsanitize before decoding.
+            $json = json_decode(Sanitizer::unsanitize($encoded), $assoc);
             if (json_last_error() != JSON_ERROR_NONE) {
                 self::log(null, Logger::NOTICE, ['Unable to decode JSON string! Is this really JSON?']);
                 return $encoded;
@@ -2827,13 +2828,6 @@ class Toolbox
                     2 => __('MM-DD-YYYY')
                 ];
                 break;
-            case 'gantt':
-                $formats = [
-                    0 => '%Y-%m-%d',
-                    1 => '%d-%m-%Y',
-                    2 => '%m-%d-%Y'
-                ];
-                break;
             default:
                 throw new \RuntimeException("Unknown type $type to get date formats.");
         }
@@ -2845,7 +2839,7 @@ class Toolbox
      *
      * @since 9.2
      *
-     * @param string $type Type for (either 'php', 'js' or 'gantt')
+     * @param string $type Type for (either 'php', 'js')
      *
      * @return string
      */
@@ -3425,6 +3419,10 @@ HTML;
      */
     public static function isFloat($value): bool
     {
+        if ($value === null || $value === '') {
+            return false;
+        }
+
         if (!is_numeric($value)) {
             $type = gettype($value);
 
@@ -3462,5 +3460,40 @@ HTML;
         }
 
         return strlen(preg_replace('/\d*\./', '', floatval($value)));
+    }
+
+    /**
+     * Try to convert to Mio the given input
+     *
+     * @param string $size Input string
+     *
+     * @return mixed The Mio value as an integer if we were able to parse the
+     * input, else the unchanged input string
+     */
+    public static function getMioSizeFromString(string $size)
+    {
+        if (is_numeric($size)) {
+            // Already a numeric value, no work to be done
+            return $size;
+        }
+
+        if (!preg_match('/(\d+).*?(\w+)/', $size, $matches)) {
+            // Unkown format, keep the string as it is
+            return $size;
+        }
+        $supported_sizes = [
+            'mo'  => 0,
+            'mio' => 0,
+            'go'  => 1,
+            'gio' => 1,
+            'to'  => 2,
+            'tio' => 2,
+        ];
+        $exp = $supported_sizes[strtolower($matches[2]) ?? null];
+        if ($exp === null) {
+            // Unkown format, keep the string as it is
+            return $size;
+        }
+        return $matches[1] * pow(1024, $exp);
     }
 }

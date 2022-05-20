@@ -2,13 +2,15 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2010-2022 by the FusionInventory Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +18,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -231,7 +234,7 @@ class VirtualMachine extends InventoryAsset
                             $input[$prop] = $val->$prop;
                         }
                     }
-                    $computerVirtualmachine->update(Toolbox::addslashes_deep($input), $this->withHistory());
+                    $computerVirtualmachine->update(Toolbox::addslashes_deep($input));
                     unset($value[$key]);
                     unset($db_vms[$keydb]);
                     break;
@@ -251,7 +254,7 @@ class VirtualMachine extends InventoryAsset
                 $input = (array)$val;
                 $input['computers_id'] = $this->item->fields['id'];
                 $input['is_dynamic']  = 1;
-                $computerVirtualmachine->add(Toolbox::addslashes_deep($input), [], $this->withHistory());
+                $computerVirtualmachine->add(Toolbox::addslashes_deep($input));
             }
         }
 
@@ -300,13 +303,13 @@ class VirtualMachine extends InventoryAsset
                 if ($computers_vm_id == 0) {
                    // Add computer
                     $vm->entities_id = $this->item->fields['entities_id'];
-                    $computers_vm_id = $computervm->add(Toolbox::addslashes_deep((array)$vm), [], $this->withHistory());
+                    $computers_vm_id = $computervm->add(Toolbox::addslashes_deep((array)$vm));
                 } else {
                    // Update computer
                     $computervm->getFromDB($computers_vm_id);
                     $input = (array)$vm;
                     $input['id'] = $computers_vm_id;
-                    $computervm->update(Toolbox::addslashes_deep($input), $this->withHistory());
+                    $computervm->update(Toolbox::addslashes_deep($input));
                 }
                //load if new, reload if not.
                 $computervm->getFromDB($computers_vm_id);

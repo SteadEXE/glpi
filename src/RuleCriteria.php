@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -99,7 +101,9 @@ class RuleCriteria extends CommonDBChild
     {
 
         if ($rule = getItemForItemtype(static::$itemtype)) {
-            return trim(preg_replace(['/<td[^>]*>/', '/<\/td>/'], [' ', ''], $rule->getMinimalCriteriaText($this->fields)));
+            $criteria_row = $rule->getMinimalCriteriaText($this->fields);
+            $criteria_text = trim(preg_replace(['/<td[^>]*>/', '/<\/td>/'], [' ', ''], $criteria_row));
+            return $criteria_text;
         }
         return '';
     }
@@ -297,12 +301,14 @@ class RuleCriteria extends CommonDBChild
                     && !empty($values['rules_id'])
                     && $generic_rule->getFromDB($values['rules_id'])
                 ) {
-                    if (isset($values['criteria']) && !empty($values['criteria'])) {
-                        $options['criterion'] = $values['criteria'];
+                    if ($rule = getItemForItemtype($generic_rule->fields["sub_type"])) {
+                        if (isset($values['criteria']) && !empty($values['criteria'])) {
+                            $options['criterion'] = $values['criteria'];
+                        }
+                        $options['value'] = $values[$field];
+                        $options['name']  = $name;
+                        return $rule->dropdownConditions($generic_rule->fields["sub_type"], $options);
                     }
-                    $options['value'] = $values[$field];
-                    $options['name']  = $name;
-                    return $rule->dropdownConditions($generic_rule->fields["sub_type"], $options);
                 }
                 break;
 
@@ -694,5 +700,7 @@ class RuleCriteria extends CommonDBChild
         echo "<tr><td colspan='4'><span id='criteria_span'>\n";
         echo "</span></td></tr>\n";
         $this->showFormButtons($options);
+
+        return true;
     }
 }

@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,22 +17,24 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
 use Glpi\Application\View\TemplateRenderer;
+use Glpi\Toolbox\Sanitizer;
 
 /**
  * Log Class
@@ -70,6 +73,10 @@ class Log extends CommonDBTM
 
     public static $rightname = 'logs';
 
+    /** @var array  */
+    public static array $queue = [];
+    /** @var bool  */
+    public static bool $use_queue = false;
 
 
     public static function getTypeName($nb = 0)
@@ -157,6 +164,10 @@ class Log extends CommonDBTM
                     $id_search_option = $key2; // Give ID of the $SEARCHOPTION
 
                     if ($val2['table'] == $item->getTable()) {
+                        if ($val2['field'] === 'completename') {
+                            $oldval = CommonTreeDropdown::sanitizeSeparatorInCompletename($oldval);
+                            $values[$key] = CommonTreeDropdown::sanitizeSeparatorInCompletename($values[$key]);
+                        }
                         $changes = [$id_search_option, addslashes($oldval ?? ''), $values[$key]];
                     } else {
                        // other cases; link field -> get data from dropdown
@@ -212,7 +223,7 @@ class Log extends CommonDBTM
             return false;
         }
 
-       // create a query to insert history
+        // create a query to insert history
         $id_search_option = $changes[0];
         $old_value        = $changes[1];
         $new_value        = $changes[2];
@@ -239,7 +250,7 @@ class Log extends CommonDBTM
         $old_value = $DB->escape(Toolbox::substr(stripslashes($old_value), 0, 180));
         $new_value = $DB->escape(Toolbox::substr(stripslashes($new_value), 0, 180));
 
-       // Security to be sure that values do not pass over the max length
+        // Security to be sure that values do not pass over the max length
         if (Toolbox::strlen($old_value) > 255) {
             $old_value = Toolbox::substr($old_value, 0, 250);
         }
@@ -258,6 +269,13 @@ class Log extends CommonDBTM
             'old_value'         => $old_value,
             'new_value'         => $new_value
         ];
+
+        if (static::$use_queue) {
+            //use queue rather than direct insert
+            static::$queue[] = $params;
+            return true;
+        }
+
         $result = $DB->insert(self::getTable(), $params);
 
         if ($result && $DB->affectedRows($result) > 0) {
@@ -301,7 +319,7 @@ class Log extends CommonDBTM
             'additional_params' => $is_filtered ? http_build_query(['filters' => $filters]) : "",
             'is_tab'            => true,
             'items_id'          => $items_id,
-            'filters'           => Toolbox::stripslashes_deep($filters),
+            'filters'           => Sanitizer::dbEscapeRecursive($filters),
             'user_names'        => $is_filtered
             ? Log::getDistinctUserNamesValuesInItemLog($item)
             : [],
@@ -1243,5 +1261,46 @@ class Log extends CommonDBTM
 
         $values = [ READ => __('Read')];
         return $values;
+    }
+
+    public static function useQueue(): void
+    {
+        static::$use_queue = true;
+    }
+
+    public static function queue($var): void
+    {
+        static::$queue[] = $var;
+    }
+
+    public static function resetQueue(): void
+    {
+        static::$queue = [];
+    }
+
+    public static function handleQueue(): void
+    {
+        global $DB;
+
+        $queue = static::$queue;
+        if (!count($queue)) {
+            return;
+        }
+
+        $update = $DB->buildInsert(
+            static::getTable(),
+            array_fill_keys(array_keys($queue[0]), new \QueryParam())
+        );
+        $stmt = $DB->prepare($update);
+
+        foreach (static::$queue as $input) {
+            $stmt->bind_param(
+                str_pad('', count($input), 's'),
+                ...array_values($input)
+            );
+            $DB->executeStatement($stmt);
+        }
+        $stmt->close();
+        static::resetQueue();
     }
 }

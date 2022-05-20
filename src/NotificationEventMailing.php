@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -86,7 +88,6 @@ class NotificationEventMailing extends NotificationEventAbstract implements Noti
         $user = new User();
         if ($user->getFromDBbyEmail($CFG_GLPI['admin_email'])) {
             $admin['users_id'] = $user->getID();
-            $admin['usertype'] = $user->fields['usertype'];
         }
 
         return $admin;
@@ -115,7 +116,6 @@ class NotificationEventMailing extends NotificationEventAbstract implements Noti
                 $user = new User();
                 if ($user->getFromDBbyEmail($row['admin_email'])) {
                     $admin['users_id'] = $user->getID();
-                    $admin['usertype'] = $user->fields['usertype'];
                 }
                 $admins[] = $admin;
             }
@@ -180,31 +180,39 @@ class NotificationEventMailing extends NotificationEventAbstract implements Noti
                 // Retieve document list if mail is in HTML format (for inline images)
                 // or if documents are attached to mail.
                 $item = getItemForItemtype($current->fields['itemtype']);
-                $doc_crit = [
-                    'items_id' => $current->fields['items_id'],
-                    'itemtype' => $current->fields['itemtype'],
-                ];
-                if ($item instanceof CommonITILObject) {
-                    $item->getFromDB($current->fields['items_id']);
-                    $doc_crit = $item->getAssociatedDocumentsCriteria(true);
-                    if ($is_html) {
-                      // Remove documents having "NO_TIMELINE" position if mail is HTML, as
-                      // these documents corresponds to inlined images.
-                     // If notification is in plain text, they should be kepts as they cannot be rendered in text.
-                        $doc_crit[] = [
-                            'timeline_position'  => ['>', CommonITILObject::NO_TIMELINE]
-                        ];
+                if (
+                    $item !== false
+                    && (
+                        $current->fields['items_id'] > 0
+                        || ($current->fields['itemtype'] == Entity::class && $current->fields['items_id'] == 0)
+                    )
+                    && $item->getFromDB($current->fields['items_id'])
+                ) {
+                    $doc_crit = [
+                        'items_id' => $current->fields['items_id'],
+                        'itemtype' => $current->fields['itemtype'],
+                    ];
+                    if ($item instanceof CommonITILObject) {
+                        $doc_crit = $item->getAssociatedDocumentsCriteria(true);
+                        if ($is_html) {
+                            // Remove documents having "NO_TIMELINE" position if mail is HTML, as
+                            // these documents corresponds to inlined images.
+                            // If notification is in plain text, they should be kepts as they cannot be rendered in text.
+                            $doc_crit[] = [
+                                'timeline_position'  => ['>', CommonITILObject::NO_TIMELINE]
+                            ];
+                        }
                     }
-                }
-                $doc_items_iterator = $DB->request(
-                    [
-                        'SELECT' => ['documents_id'],
-                        'FROM'   => Document_Item::getTable(),
-                        'WHERE'  => $doc_crit,
-                    ]
-                );
-                foreach ($doc_items_iterator as $doc_item) {
-                     $documents_ids[] = $doc_item['documents_id'];
+                    $doc_items_iterator = $DB->request(
+                        [
+                            'SELECT' => ['documents_id'],
+                            'FROM'   => Document_Item::getTable(),
+                            'WHERE'  => $doc_crit,
+                        ]
+                    );
+                    foreach ($doc_items_iterator as $doc_item) {
+                         $documents_ids[] = $doc_item['documents_id'];
+                    }
                 }
             }
 

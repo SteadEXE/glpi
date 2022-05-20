@@ -1,12 +1,13 @@
 {#
  # ---------------------------------------------------------------------
+ #
  # GLPI - Gestionnaire Libre de Parc Informatique
- # Copyright (C) 2015-2022 Teclib' and contributors.
  #
  # http://glpi-project.org
  #
- # based on GLPI - Gestionnaire Libre de Parc Informatique
- # Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ # @copyright 2015-2022 Teclib' and contributors.
+ # @copyright 2003-2014 by the INDEPNET Development Team.
+ # @licence   https://www.gnu.org/licenses/gpl-3.0.html
  #
  # ---------------------------------------------------------------------
  #
@@ -14,18 +15,19 @@
  #
  # This file is part of GLPI.
  #
- # GLPI is free software; you can redistribute it and/or modify
+ # This program is free software: you can redistribute it and/or modify
  # it under the terms of the GNU General Public License as published by
- # the Free Software Foundation; either version 2 of the License, or
+ # the Free Software Foundation, either version 3 of the License, or
  # (at your option) any later version.
  #
- # GLPI is distributed in the hope that it will be useful,
+ # This program is distributed in the hope that it will be useful,
  # but WITHOUT ANY WARRANTY; without even the implied warranty of
  # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  # GNU General Public License for more details.
  #
  # You should have received a copy of the GNU General Public License
- # along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ #
  # ---------------------------------------------------------------------
  #}
 
@@ -84,13 +86,13 @@
             <input type="hidden" name="items_id" value="{{ item.fields['id'] }}" />
             {{ call_plugin_hook('pre_item_form', {"item": subitem, 'options': params}) }}
 
-            {% set openfollowup = _get['_openfollowup'] ?? false %}
-            {% if openfollowup %}
+            {% set add_reopen = (_get['_openfollowup'] ?? false) or item.needReopen() %}
+            {% if add_reopen %}
                <input type="hidden" name="add_reopen" value="1" />
             {% endif %}
 
-            <div class="row">
-               {% set col_md = get_current_interface() == 'central' ? 'col-md-9' : 'col-md-12' %}
+            <div class="row mx-n3 mx-xxl-auto">
+               {% set col_md = get_current_interface() == 'central' ? 'col-xl-7 col-xxl-8' : 'col-xxl-12' %}
                <div class="col-12 {{ col_md }}">
                   {{ fields.textareaField(
                      'content',
@@ -103,11 +105,12 @@
                         'enable_fileupload': true,
                         'enable_mentions': true,
                         'rand': rand,
+                        'required': add_reopen
                      }
                   ) }}
                </div>
                {% if get_current_interface() == 'central' %}
-                  <div class="col-12 col-md-3 order-first order-md-last">
+                  <div class="col-12 col-xl-5 col-xxl-4 order-first order-md-last pe-o pe-xxl-auto">
                      <div class="row">
 
                         {% set fup_template_lbl %}
@@ -161,7 +164,7 @@
                         {% if can_read_kb and kb_id_toload > 0 %}
                            {% set link_kb_lbl %}
                               <i class="fas fa-link fa-fw me-1" data-bs-toggle="tooltip" data-bs-placement="top"
-                                 title="{{ __('Link to knowledge base entry #%id')|format('TODO kb id') }}"></i>
+                                 title="{{ __('Link to knowledge base entry #%id')|replace({'%id': kb_id_toload}) }}"></i>
                            {% endset %}
                            {{ fields.sliderField(
                               'kb_linked_id',

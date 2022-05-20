@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -52,24 +54,20 @@ class Grid
     protected $current         = "";
     protected $dashboard       = null;
     protected $items           = [];
+    protected $context            = '';
 
     public static $embed              = false;
-    public static $context            = '';
     public static $all_dashboards     = [];
 
-    public function __construct(
-        string $dashboard_key = "central",
-        int $grid_cols = 26,
-        int $grid_rows = 24,
-        string $context = "core"
-    ) {
+    public function __construct(string $dashboard_key = "central", int $grid_cols = 26, int $grid_rows = 24, string $context = 'core')
+    {
 
         $this->current   = $dashboard_key;
         $this->grid_cols = $grid_cols;
         $this->grid_rows = $grid_rows;
 
         $this->dashboard = new Dashboard($dashboard_key);
-        self::$context   = $context;
+        $this->context   = $context;
     }
 
 
@@ -81,6 +79,15 @@ class Grid
     public function getDashboard()
     {
         return $this->dashboard;
+    }
+
+    /**
+     * Return the context used for this Grid instance
+     * @return string
+     */
+    public function getContext()
+    {
+        return $this->context;
     }
 
 
@@ -98,7 +105,7 @@ class Grid
             || count(self::$all_dashboards) === 0
             || $force
         ) {
-            self::$all_dashboards = Dashboard::getAll($force, !self::$embed, self::$context);
+            self::$all_dashboards = Dashboard::getAll($force, !self::$embed, '');
         }
 
         return is_array(self::$all_dashboards);
@@ -183,11 +190,12 @@ HTML;
 
 
     /**
-     * Do we have the right to view at least one dashboard in the current collection
+     * Do we have the right to view at least one dashboard?
      *
+     * This can be optionally restricted to a specific context.
      * @return bool
      */
-    public static function canViewOneDashboard(): bool
+    public static function canViewOneDashboard($context = null): bool
     {
        // check global (admin) right
         if (Dashboard::canView()) {
@@ -196,7 +204,13 @@ HTML;
 
         self::loadAllDashboards();
 
-        return (count(self::$all_dashboards) > 0);
+        $viewable = self::$all_dashboards;
+        if ($context) {
+            $viewable = array_filter(self::$all_dashboards, function ($dashboard) use ($context) {
+                return $dashboard['context'] === $context;
+            });
+        }
+        return (count($viewable) > 0);
     }
 
 
@@ -294,6 +308,7 @@ HTML;
                 'class'        => 'dashboard_select form-select',
                 'can_view_all' => $can_view_all,
                 'noselect2'    => true,
+                'context'      => $this->context
             ]);
         }
 
@@ -392,14 +407,13 @@ HTML;
 
         if ($mini) {
             $html = "<div class='card mb-4 d-none d-md-block dashboard-card'>
-            <div class='card-body'>
+            <div class='card-body p-2'>
                $html
             </div>
          </div>";
         }
 
         $ajax_cards = GLPI_AJAX_DASHBOARD;
-        $context    = self::$context;
         $cache_key  = sha1($_SESSION['glpiactiveentities_string '] ?? "");
 
         $js = <<<JAVASCRIPT
@@ -414,7 +428,7 @@ HTML;
             ajax_cards:  {$ajax_cards},
             all_cards:   {$cards_json},
             all_widgets: {$all_widgets_json},
-            context:     "{$context}",
+            context:     "{$this->context}",
             cache_key:   "{$cache_key}",
          })
       });
@@ -1126,6 +1140,55 @@ HTML;
                 }
             }
 
+            foreach ($CFG_GLPI['itemdevices'] as $itemtype) {
+                $fk_itemtype = $itemtype::getDeviceType();
+                $label = sprintf(
+                    __("Number of %s by type"),
+                    $itemtype::getTypeName(Session::getPluralNumber()),
+                    $fk_itemtype::getFieldLabel()
+                );
+
+                $cards["count_" . $itemtype . "_" . $fk_itemtype] = [
+                    'widgettype' => ['summaryNumbers', 'multipleNumber', 'pie', 'donut', 'halfpie', 'halfdonut', 'bar', 'hbar'],
+                    'itemtype'   => "\\$itemtype",
+                    'group'      =>  _n('Device', 'Devices', 1),
+                    'label'      => $label,
+                    'provider'   => "Glpi\\Dashboard\\Provider::multipleNumber" . $itemtype . "By" . $fk_itemtype,
+                    'filters'    => array_merge([
+                        'dates',
+                        'dates_mod',
+                    ], $add_filters_fct($itemtype::getTable()))
+                ];
+
+                $clean_itemtype = str_replace('\\', '_', $itemtype);
+                $cards["bn_count_$clean_itemtype"] = [
+                    'widgettype' => ["bigNumber"],
+                    'group'      => _n('Device', 'Devices', 1),
+                    'itemtype'   => "\\$itemtype",
+                    'label'      => sprintf(__("Number of %s"), $itemtype::getTypeName()),
+                    'provider'   => "Glpi\\Dashboard\\Provider::bigNumber$itemtype",
+                    'filters'    => array_merge([
+                        'dates',
+                        'dates_mod',
+                    ], $add_filters_fct($itemtype::getTable()))
+                ];
+            }
+
+            foreach ($CFG_GLPI['device_types'] as $itemtype) {
+                $clean_itemtype = str_replace('\\', '_', $itemtype);
+                $cards["bn_count_$clean_itemtype"] = [
+                    'widgettype' => ["bigNumber"],
+                    'group'      => _n('Device', 'Devices', 1),
+                    'itemtype'   => "\\$itemtype",
+                    'label'      => sprintf(__("Number of type of %s"), $itemtype::getTypeName()),
+                    'provider'   => "Glpi\\Dashboard\\Provider::bigNumber$itemtype",
+                    'filters'    => array_merge([
+                        'dates',
+                        'dates_mod',
+                    ], $add_filters_fct($itemtype::getTable()))
+                ];
+            }
+
            // add multiple width for Assets itemtypes grouped by their foreign keys
             $assets = array_merge($CFG_GLPI['asset_types'], ['Software']);
             foreach ($assets as $itemtype) {
@@ -1478,14 +1541,13 @@ HTML;
 
     public static function dropdownDashboard(string $name = "", array $params = []): string
     {
-        self::loadAllDashboards();
+        $to_show = Dashboard::getAll(false, true, $params['context'] ?? 'core');
         $can_view_all = $params['can_view_all'] ?? false;
 
         $options_dashboards = [];
-        foreach (self::$all_dashboards as $key => $dashboard) {
+        foreach ($to_show as $key => $dashboard) {
             if (self::canViewSpecificicDashboard($key, $can_view_all)) {
                 $options_dashboards[$key] = $dashboard['name'] ?? $key;
-                ;
             }
         }
 

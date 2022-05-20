@@ -2,13 +2,15 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2010-2022 by the FusionInventory Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +18,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -40,6 +43,7 @@ use Glpi\Inventory\Conf;
 use Glpi\Inventory\Request;
 use RefusedEquipment;
 use RuleImportAssetCollection;
+use RuleImportEntity;
 use RuleImportEntityCollection;
 use RuleMatchedLog;
 use Toolbox;
@@ -74,6 +78,10 @@ abstract class MainAsset extends InventoryAsset
     protected $inventoried = [];
     /** @var boolean */
     protected $partial = false;
+    /** @var bool */
+    protected bool $is_discovery = false;
+
+    protected $current_key;
 
     public function __construct(CommonDBTM $item, $data)
     {
@@ -85,14 +93,14 @@ abstract class MainAsset extends InventoryAsset
     }
 
     /**
-     * Get model foregien key field name
+     * Get model foreign key field name
      *
      * @return string
      */
     abstract protected function getModelsFieldName();
 
     /**
-     * Get model foregien key field name
+     * Get model foreign key field name
      *
      * @return string
      */
@@ -506,20 +514,33 @@ abstract class MainAsset extends InventoryAsset
                     $input['entities_id'] = $dataEntity['entities_id'];
                 }
                 $this->entities_id = $input['entities_id'];
+
+                // get data from rules (like locations_id, states_id, groups_id_tech, etc)
+                // we don't want virtual action (prefixed by _)
+                $ruleentity_actions = $ruleEntity->getRuleClass()->getAllActions();
+                foreach ($ruleentity_actions as $action_key => $action_data) {
+                    if (
+                        $action_key[0] !== '_'
+                        && $action_key !== "entities_id"
+                        && isset($dataEntity[$action_key])
+                    ) {
+                        $this->ruleentity_data[$action_key] = $dataEntity[$action_key];
+                    }
+                }
             }
 
-           //call rules on current collected data to find item
-           //a callback on rulepassed() will be done if one is found.
+            //call rules on current collected data to find item
+            //a callback on rulepassed() will be done if one is found.
             $rule = new RuleImportAssetCollection();
             $rule->getCollectionPart();
             $datarules = $rule->processAllRules($input, [], ['class' => $this]);
 
             if (isset($datarules['_no_rule_matches']) and ($datarules['_no_rule_matches'] == '1')) {
-               //no rule matched, this is a new one
+                //no rule matched, this is a new one
                 $this->rulepassed(0, $this->item->getType(), null);
             } else if (!isset($datarules['found_inventories'])) {
                 if ($this->isAccessPoint($data)) {
-                   //Only main item is stored as refused, not all APs
+                    //Only main item is stored as refused, not all APs
                     unset($this->data[$key]);
                 } else {
                     $input['rules_id'] = $datarules['rules_id'];
@@ -580,16 +601,19 @@ abstract class MainAsset extends InventoryAsset
      */
     public function rulepassed($items_id, $itemtype, $rules_id, $ports_id = 0)
     {
-        global $DB, $CFG_GLPI;
+        global $CFG_GLPI;
 
         $key = $this->current_key;
         $val = &$this->data[$key];
         $entities_id = $this->entities_id;
         $val->is_dynamic = 1;
         $val->entities_id = $entities_id;
+        $val->states_id = $this->states_id_default ?? 0;
 
-        $val->states_id = $this->states_id_default ?? $this->item->fields['states_id'] ?? 0;
-        $val->locations_id = $this->locations_id ?? $val->locations_id ?? $this->item->fields['locations_id'] ?? 0;
+        // append data from RuleImportEntity
+        foreach ($this->ruleentity_data as $attribute => $value) {
+            $val->{$attribute} = $value;
+        }
 
         $orig_glpiactive_entity = $_SESSION['glpiactive_entity'] ?? null;
         $orig_glpiactiveentities = $_SESSION['glpiactiveentities'] ?? null;
@@ -608,8 +632,13 @@ abstract class MainAsset extends InventoryAsset
             unset($input['ap_port']);
             unset($input['firmware']);
             $items_id = $this->item->add(Toolbox::addslashes_deep($input));
-            $this->with_history = false;//do not handle history on main item first import
+            $this->setNew();
         } else {
+            if ($this->is_discovery === true) {
+                //do not update from network discoveries
+                //prevents discoveries to remove all ports, IPs and so on found with network inventory
+                return;
+            }
             $this->item->getFromDB($items_id);
         }
 
@@ -678,7 +707,7 @@ abstract class MainAsset extends InventoryAsset
         }
 
         $input = (array)$val;
-        $this->item->update(Toolbox::addslashes_deep($input), $this->withHistory());
+        $this->item->update(Toolbox::addslashes_deep($input));
 
         if (!($this->item instanceof RefusedEquipment)) {
             $this->handleAssets();
@@ -850,5 +879,18 @@ abstract class MainAsset extends InventoryAsset
     protected function isAccessPoint($object): bool
     {
         return property_exists($object, 'is_ap') && $object->is_ap == true;
+    }
+
+    /**
+     * Mark as discovery
+     *
+     * @param bool $disco
+     *
+     * @return $this
+     */
+    public function setDiscovery(bool $disco): self
+    {
+        $this->is_discovery = $disco;
+        return $this;
     }
 }

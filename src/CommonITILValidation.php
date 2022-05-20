@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -359,7 +361,7 @@ abstract class CommonITILValidation extends CommonDBChild
                 $user->getFromDB($this->fields["users_id_validate"]);
                 $email   = $user->getDefaultEmail();
                 if (!empty($email)) {
-                    Session::addMessageAfterRedirect(sprintf(__('Approval request send to %s'), $user->getName()));
+                    Session::addMessageAfterRedirect(sprintf(__('Approval request sent to %s'), $user->getName()));
                 } else {
                     Session::addMessageAfterRedirect(
                         sprintf(
@@ -518,7 +520,7 @@ abstract class CommonITILValidation extends CommonDBChild
 
         switch ($case) {
             case 'add':
-                return sprintf(__('Approval request send to %s'), $username);
+                return sprintf(__('Approval request sent to %s'), $username);
 
             case 'delete':
                 return sprintf(__('Cancel the approval request to %s'), $username);
@@ -905,7 +907,7 @@ abstract class CommonITILValidation extends CommonDBChild
                 $item->fields["validation_percent"]
             );
             echo "</td>";
-            echo "<td><input type='submit' name='update' class='btn btn-primary' value='" .
+            echo "<td><input type='submit' name='update' class='btn btn-outline-secondary' value='" .
                     _sx('button', 'Save') . "'>";
             if (!empty($tID)) {
                 echo "<input type='hidden' name='id' value='$tID'>";
@@ -920,25 +922,6 @@ abstract class CommonITILValidation extends CommonDBChild
         echo "</table>";
         if ($canadd) {
             Html::closeForm();
-        }
-
-        echo "<div id='viewvalidation" . $tID . "$rand'></div>\n";
-
-        if ($canadd) {
-            echo "<script type='text/javascript' >\n";
-            echo "function viewAddValidation" . $tID . "$rand() {\n";
-            $params = ['type'             => $this->getType(),
-                'parenttype'       => static::$itemtype,
-                static::$items_id  => $tID,
-                'id'               => -1
-            ];
-            Ajax::updateItemJsCode(
-                "viewvalidation" . $tID . "$rand",
-                $CFG_GLPI["root_doc"] . "/ajax/viewsubitem.php",
-                $params
-            );
-            echo "};";
-            echo "</script>\n";
         }
 
         $iterator = $DB->Request([
@@ -965,7 +948,7 @@ abstract class CommonITILValidation extends CommonDBChild
                 ))
             ) {
                 echo "<tr class='tab_bg_1 noHover'><td class='center' colspan='" . $nb_colonnes . "'>";
-                echo "<a class='btn btn-primary' href='javascript:viewAddValidation" . $tID . "$rand();'>";
+                echo "<a class='btn btn-outline-secondary' href='javascript:viewAddValidation" . $tID . "$rand();'>";
                 echo __('Send an approval request') . "</a></td></tr>\n";
             }
         }
@@ -1052,6 +1035,25 @@ abstract class CommonITILValidation extends CommonDBChild
             echo __('No item found') . "</th></tr>\n";
         }
         echo "</table>";
+
+        echo "<div id='viewvalidation" . $tID . "$rand'></div>\n";
+
+        if ($canadd) {
+            echo "<script type='text/javascript' >\n";
+            echo "function viewAddValidation" . $tID . "$rand() {\n";
+            $params = ['type'             => $this->getType(),
+                'parenttype'       => static::$itemtype,
+                static::$items_id  => $tID,
+                'id'               => -1
+            ];
+            Ajax::updateItemJsCode(
+                "viewvalidation" . $tID . "$rand",
+                $CFG_GLPI["root_doc"] . "/ajax/viewsubitem.php",
+                $params
+            );
+            echo "};";
+            echo "</script>";
+        }
     }
 
 
@@ -1074,6 +1076,8 @@ abstract class CommonITILValidation extends CommonDBChild
             'item'      => $options['parent'],
             'subitem'   => $this
         ]);
+
+        return true;
     }
 
 
@@ -1670,7 +1674,7 @@ abstract class CommonITILValidation extends CommonDBChild
                         </div>
                      </div>
                   </div>
-               HTML;
+HTML;
                     echo $html;
                 }
                 break;

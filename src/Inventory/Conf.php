@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -46,6 +48,8 @@ use DevicePowerSupply;
 use DeviceProcessor;
 use DeviceSimcard;
 use DeviceSoundCard;
+use Glpi\Application\View\TemplateRenderer;
+use Glpi\Toolbox\Sanitizer;
 use Html;
 use NetworkPortType;
 use Session;
@@ -95,34 +99,9 @@ class Conf extends CommonGLPI
      */
     public function showUploadForm()
     {
-        echo "<form action='' method='post' enctype='multipart/form-data'>";
-        echo "<table class='tab_cadre'>";
-        echo "<tr>";
-        echo "<th>";
-        echo __('Import inventory file');
-        echo "</th>";
-        echo "</tr>";
-
-        echo "<tr class='tab_bg_1'>";
-        echo "<td>";
-        echo sprintf(
-            __("You can use this menu to upload any inventory file. The file must have a known extension (%1\$s).\n"),
-            implode(', ', $this->knownInventoryExtensions())
-        );
-        echo '<br/>' . __('It is also possible to upload a compressed archive directly with a collection of inventory files.');
-        echo "</td>";
-        echo "</tr>";
-
-        echo "<tr class='tab_bg_1'>";
-        echo "<td align='center'>";
-        echo "<input class='btn' type='file' name='importfile' value=''/>";
-        echo "&nbsp;<input type='submit' value='" . __('Import') . "' class='btn btn-primary'/>";
-        echo "</td>";
-        echo "</tr>";
-
-        echo "</table>";
-
-        Html::closeForm();
+        TemplateRenderer::getInstance()->display('pages/admin/inventory/upload_form.html.twig', [
+            'inventory_extensions' => $this->knownInventoryExtensions()
+        ]);
     }
 
     /**
@@ -148,11 +127,8 @@ class Conf extends CommonGLPI
      */
     public function importFile($files): Request
     {
-        ini_set("memory_limit", "-1");
-        ini_set("max_execution_time", "0");
-
-        $path = $files['importfile']['tmp_name'];
-        $name = $files['importfile']['name'];
+        $path = $files['inventory_file']['tmp_name'];
+        $name = $files['inventory_file']['name'];
 
         $inventory_request = new Request();
 
@@ -219,8 +195,17 @@ class Conf extends CommonGLPI
             $inventory_request->handleContentType($mime);
             $inventory_request->handleRequest($contents);
             if ($inventory_request->inError()) {
+                $response = $inventory_request->getResponse();
+                if ($inventory_request->getMode() === Request::JSON_MODE) {
+                    $json = json_decode($inventory_request->getResponse());
+                    $response = $json->message;
+                } else {
+                    $xml = simplexml_load_string($response);
+                    $response = $xml->ERROR;
+                }
+                $response = str_replace('&nbsp;', ' ', $response);
                 Session::addMessageAfterRedirect(
-                    __('File has not been imported:') . " " . $inventory_request->getResponse(),
+                    __('File has not been imported:') . " " . Sanitizer::encodeHtmlSpecialChars($response),
                     true,
                     ERROR
                 );

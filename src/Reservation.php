@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -545,6 +547,8 @@ JAVASCRIPT;
                 'complete' => true,
             ]);
 
+            $editable = $canedit_admin || ($can_reserve && $my_item);
+
             $events[] = [
                 'id'          => $data['id'],
                 'resourceId'  => $data['itemtype'] . "-" . $data['items_id'],
@@ -561,7 +565,8 @@ JAVASCRIPT;
                 'items_id'    => $data['items_id'],
                 'color'       => Toolbox::getColorForString($name),
                 'ajaxurl'     => Reservation::getFormURLWithID($data['id']),
-                'editable'    => $canedit_admin || ($can_reserve && $my_item),
+                'editable'    => $editable, // "editable" is used by fullcalendar, but is not accessible
+                '_editable'   => $editable, // "_editable" will be used by custom event handlers
             ];
         }
 
@@ -582,8 +587,7 @@ JAVASCRIPT;
             ],
             'FROM'   => $res_i_table,
             'WHERE'  => [
-                'is_active'  => 1,
-                'is_deleted' => 0
+                'is_active'  => 1
             ]
         ]);
 
@@ -629,8 +633,8 @@ JAVASCRIPT;
 
         return $reservation->update([
             'id'    => (int) $event['id'],
-            'begin' => $event['start'],
-            'end'   => $event['end']
+            'begin' => date("Y-m-d H:i:s", strtotime($event['start'])),
+            'end'   => date("Y-m-d H:i:s", strtotime($event['end'])),
         ]);
     }
 
@@ -701,7 +705,7 @@ JAVASCRIPT;
                 'items_id_name'   => 'items[]',
                 'itemtypes'       => $CFG_GLPI['reservation_types'],
                 'entity_restrict' => Session::getActiveEntity(),
-                'checkright'      => true,
+                'checkright'      => false,
                 'ajax_page'       => $CFG_GLPI['root_doc'] . '/ajax/reservable_items.php'
             ]);
             echo "<span id='item_dropdown'>";
@@ -862,6 +866,8 @@ JAVASCRIPT;
         echo "</table>";
         Html::closeForm();
         echo "</div>";
+
+        return true;
     }
 
 

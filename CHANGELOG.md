@@ -3,7 +3,35 @@
 The present file will list all changes made to the project; according to the
 [Keep a Changelog](http://keepachangelog.com/) project.
 
-## [10.0.0] unreleased
+## [10.0.1] unreleased
+
+### Added
+
+### Changed
+- PDF export library has been changed back from `mPDF` to `TCPDF`.
+
+### Deprecated
+
+### Removed
+- Gantt feature has been moved into the `gantt` plugin.
+
+### API changes
+
+#### Added
+
+#### Changes
+
+#### Deprecated
+
+#### Removed
+- `GlpiGantt` javascript helper and `dhtmlx-gantt` library.
+- `Glpi\Gantt` namespace and all corresponding classes.
+- `Project::getDataToDisplayOnGantt()`
+- `Project::showGantt()`
+- `ProjectTask::getDataToDisplayOnGantt()`
+- `ProjectTask::getDataToDisplayOnGanttForProject()`
+
+## [10.0.0] 2022-04-20
 
 ### Added
 - Added UUID to all other itemtypes that are related to Operating Systems (Phones, Printers, etc)
@@ -40,6 +68,7 @@ The present file will list all changes made to the project; according to the
 - `Symfony\Console` library has been upgraded to version 5.4.
 - `CommonGLPI` constructor signature has been declared in an interface (`CommonGLPIInterface`).
 - `DBmysqlIterator` class compliancy with `Iterator` has been fixed (i.e. `DBmysqlIterator::next()` does not return current row anymore).
+- `Domain` class inheritance changed from `CommonDropdown` to `CommonDBTM`.
 - `showForm()` method of all classes inheriting `CommonDBTM` have been changed to match `CommonDBTM::showForm()` signature.
 - Format of `Message-Id` header sent in Tickets notifications changed to match format used by other items.
 - Added `DB::truncate()` to replace raw SQL queries
@@ -47,10 +76,8 @@ The present file will list all changes made to the project; according to the
 - Field `date` of KnowbaseItem has been renamed to `date_creation`.
 - Field `date_creation` of KnowbaseItem_Revision has been renamed to `date`.
 - Field `date_creation` of NetworkPortConnectionLog has been renamed to `date`.
-- Field `date_creation` of NetworkPortMetrics has been renamed to `date`.
 - Field `date` of Notepad has been renamed to `date_creation`.
 - Field `date_mod` of ObjectLock has been renamed to `date`.
-- Field `date_creation` of PrinterLog has been renamed to `date`.
 - Field `date` of ProjectTask has been renamed to `date_creation`.
 - Table `glpi_netpoints` has been renamed to `glpi_sockets`.
 - `GLPI_FORCE_EMPTY_SQL_MODE` constant has been removed in favor of `GLPI_DISABLE_ONLY_FULL_GROUP_BY_SQL_MODE` usage.
@@ -75,8 +102,10 @@ The present file will list all changes made to the project; according to the
 - `CommonDropdown::displayHeader()`, use `CommonDropdown::displayCentralHeader()` instead and make sure to override properly `first_level_menu`, `second_level_menu` and `third_level_menu`.
 - `GLPI::getLogLevel()`
 - `Html::clean()`
+- `MailCollector::listEncodings()`
 - `RuleImportComputer` class
 - `RuleImportComputerCollection` class
+- `SLM::setTicketCalendar()`
 - `Toolbox::clean_cross_side_scripting_deep()`
 - `Toolbox::endsWith()`
 - `Toolbox::filesizeDirectory()`
@@ -252,7 +281,9 @@ The present file will list all changes made to the project; according to the
 - `Update::declareOldItems()`
 - `User::showPersonalInformation()`
 
-## [9.5.6] unreleased
+## [9.5.7] 2022-01-27
+
+## [9.5.6] 2021-09-15
 
 ### Changed
 

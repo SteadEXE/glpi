@@ -2,13 +2,15 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2010-2022 by the FusionInventory Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +18,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -64,20 +67,18 @@ class NetworkPort extends InventoryAsset
 
         $this->extra_data['\Glpi\Inventory\Asset\\' . $this->item->getType()] = null;
         $mapping = [
-            'ifname'   => 'name',
-            'ifnumber' => 'logical_number',
+            'ifname'       => 'name',
+            'ifnumber'     => 'logical_number',
             'ifportduplex' => 'portduplex',
-            'ifinoctets' => 'ifinbytes',
-            'ifoutoctets' => 'ifoutbytes'
+            'ifinoctets'   => 'ifinbytes',
+            'ips'          => 'ipaddress',
+            'ifoutoctets'  => 'ifoutbytes'
         ];
 
         foreach ($this->data as $k => &$val) {
             $keep = true;
             if (!property_exists($val, 'instantiation_type')) {
                 $val->instantiation_type = 'NetworkPortEthernet';
-            }
-            if (!property_exists($val, 'ipaddress')) {
-                $val->ipaddress = [];
             }
 
             if (!property_exists($val, 'logical_number') && !property_exists($val, 'ifnumber')) {
@@ -250,23 +251,7 @@ class NetworkPort extends InventoryAsset
 
             if (count($this->connection_ports)) {
                 $connections_id = current(current($this->connection_ports));
-
-                if ($connections_id == $netports_id) {
-                    throw new \RuntimeException('Cannot wire a port to itself!');
-                }
-
-                $wire = new \NetworkPort_NetworkPort();
-                if ($wire->getFromDBForNetworkPort([$netports_id])) {
-                    continue;
-                }
-                $contacts_id = $wire->getOppositeContact($netports_id);
-
-                if (!($contacts_id && $contacts_id == $connections_id)) {
-                    $wire->add([
-                        'networkports_id_1'  => $netports_id,
-                        'networkports_id_2'  => $connections_id
-                    ], [], $this->withHistory());
-                }
+                $this->addPortsWiring($netports_id, $connections_id);
             }
         }
         unset($this->current_connection);
@@ -317,20 +302,7 @@ class NetworkPort extends InventoryAsset
         } else { // One mac on port
             if (count($this->connection_ports)) {
                 $connections_id = current(current($this->connection_ports));
-
-                if ($connections_id == $netports_id) {
-                    throw new \RuntimeException('Cannot wire a port to itself!');
-                }
-
-                $wire = new \NetworkPort_NetworkPort();
-                $contacts_id = $wire->getOppositeContact($netports_id);
-
-                if (!($contacts_id && $contacts_id == $connections_id)) {
-                    $wire->add([
-                        'networkports_id_1'  => $netports_id,
-                        'networkports_id_2'  => $connections_id
-                    ], [], $this->withHistory());
-                }
+                $this->addPortsWiring($netports_id, $connections_id);
             }
             return;
         }
@@ -512,7 +484,7 @@ class NetworkPort extends InventoryAsset
                     'networkports_id'       => $netports_id,
                     'networkports_id_list'  => []
                 ];
-                $input['id'] = $netport_aggregate->add($input, [], $this->withHistory());
+                $input['id'] = $netport_aggregate->add($input);
             }
 
             $input['networkports_id_list'] = array_values($aggregates);
@@ -577,7 +549,7 @@ class NetworkPort extends InventoryAsset
                     $input['name'] = $name;
                 }
             }
-            $items_id = $item->add(Toolbox::addslashes_deep($input), [], $this->withHistory());
+            $items_id = $item->add(Toolbox::addslashes_deep($input));
 
             $rulesmatched = new \RuleMatchedLog();
             $agents_id = $this->agent->fields['id'];
@@ -627,7 +599,7 @@ class NetworkPort extends InventoryAsset
             if (property_exists($port, 'mac') && !empty($port->mac)) {
                 $input['mac'] = $port->mac;
             }
-            $ports_id = $netport->add(Toolbox::addslashes_deep($input), [], $this->withHistory());
+            $ports_id = $netport->add(Toolbox::addslashes_deep($input));
         }
 
         if (!isset($this->connection_ports[$itemtype])) {
@@ -683,7 +655,7 @@ class NetworkPort extends InventoryAsset
     {
         $mainasset = $this->extra_data['\Glpi\Inventory\Asset\\' . $this->item->getType()];
 
-       //handle ports for stacked switches
+        //handle ports for stacked switches
         if ($mainasset->isStackedSwitch()) {
             $bkp_ports = $this->ports;
             foreach ($this->ports as $k => $val) {
@@ -772,5 +744,40 @@ class NetworkPort extends InventoryAsset
         }
 
         return $this->$part;
+    }
+
+    /**
+     * Add wiring between network ports.
+     *
+     * @param int $netports_id_1
+     * @param int $netports_id_2
+     *
+     * @return bool
+     */
+    private function addPortsWiring(int $netports_id_1, int $netports_id_2): bool
+    {
+        if ($netports_id_1 == $netports_id_2) {
+            throw new \RuntimeException('Cannot wire a port to itself!');
+        }
+
+        $wire = new \NetworkPort_NetworkPort();
+        $current_port_1_opposite = $wire->getOppositeContact($netports_id_1);
+
+        if ($current_port_1_opposite !== false && $current_port_1_opposite == $netports_id_2) {
+            return true; // Connection already exists in DB
+        }
+
+        if ($current_port_1_opposite !== false) {
+            $wire->delete($wire->fields); // Drop previous connection on self
+        }
+
+        if ($wire->getFromDBForNetworkPort($netports_id_2)) {
+            $wire->delete($wire->fields); // Drop previous connection on opposite
+        }
+
+        return $wire->add([
+            'networkports_id_1' => $netports_id_1,
+            'networkports_id_2' => $netports_id_2,
+        ]);
     }
 }

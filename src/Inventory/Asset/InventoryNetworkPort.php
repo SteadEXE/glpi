@@ -2,13 +2,15 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2010-2022 by the FusionInventory Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +18,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -148,7 +151,7 @@ trait InventoryNetworkPort
         $stmt = $DB->prepare($query);
 
         foreach ($this->ports as $port) {
-            if (property_exists($port, 'mac') && $port->mac != '') {
+            if (!$this->isMainPartial() && property_exists($port, 'mac') && $port->mac != '') {
                 $stmt->bind_param(
                     's',
                     $port->mac
@@ -167,7 +170,7 @@ trait InventoryNetworkPort
                          'name'            => addslashes($port->name)
                      ];
 
-                     $networkport->update($input, $this->withHistory());
+                     $networkport->update($input);
                      $unmanaged->delete(['id' => $unmanageds_id], true);
                 }
             }
@@ -186,10 +189,11 @@ trait InventoryNetworkPort
         $ipnetwork = new IPNetwork();
         foreach ($this->ports as $port) {
             if (
-                !property_exists($port, 'gateway') || $port->gateway != ''
-                || property_exists($port, 'netmask') || $port->netmask != ''
-                || property_exists($port, 'subnet') ||  $port->subnet  != ''
+                !property_exists($port, 'gateway') || $port->gateway == ''
+                || !property_exists($port, 'netmask') || $port->netmask == ''
+                || !property_exists($port, 'subnet') ||  $port->subnet  == ''
             ) {
+                // Ignore ports with incomplete information
                 continue;
             }
 
@@ -232,7 +236,7 @@ trait InventoryNetworkPort
                      'gateway'      => $port->gateway,
                      'entities_id'  => $this->entities_id
                  ];
-                 $ipnetwork->add(Toolbox::addslashes_deep($input), [], $this->withHistory());
+                 $ipnetwork->add(Toolbox::addslashes_deep($input));
             }
         }
     }
@@ -269,7 +273,7 @@ trait InventoryNetworkPort
             $input['trunk'] = 0;
         }
 
-        $netports_id = $networkport->add($input, [], $this->withHistory());
+        $netports_id = $networkport->add($input);
         return $netports_id;
     }
 
@@ -296,7 +300,7 @@ trait InventoryNetworkPort
             $input['name'] = $name;
         }
 
-        $netname_id = $networkname->add($input, [], $this->withHistory());
+        $netname_id = $networkname->add($input);
         return $netname_id;
     }
 
@@ -318,7 +322,7 @@ trait InventoryNetworkPort
                 'name'         => addslashes($ip),
                 'is_dynamic'   => 1
             ];
-            $ipaddress->add($input, [], $this->withHistory());
+            $ipaddress->add($input);
         }
     }
 
@@ -376,6 +380,8 @@ trait InventoryNetworkPort
                 foreach (['name', 'mac', 'instantiation_type'] as $field) {
                     if (property_exists($data, $field)) {
                         $comp_data[$field] = strtolower($data->$field);
+                    } else {
+                        $comp_data[$field] = "";
                     }
                 }
 
@@ -390,8 +396,7 @@ trait InventoryNetworkPort
                         [
                             'id'              => $keydb,
                             'logical_number'  => $data->logical_number
-                        ],
-                        $this->withHistory()
+                        ]
                     );
                 }
 
@@ -403,7 +408,7 @@ trait InventoryNetworkPort
                     $this->handleInstantiation($type, $data, $keydb, true);
                 }
 
-                $ips = $data->ipaddress;
+                $ips = $data->ipaddress ?? [];
                 if (count($ips)) {
                    //handle network name
                     if ($netname_stmt == null) {
@@ -572,9 +577,9 @@ trait InventoryNetworkPort
 
        //store instance
         if ($instance->isNewItem()) {
-            $instance->add(Toolbox::addslashes_deep($input), [], $this->withHistory());
+            $instance->add(Toolbox::addslashes_deep($input));
         } else {
-            $instance->update(Toolbox::addslashes_deep($input), $this->withHistory());
+            $instance->update(Toolbox::addslashes_deep($input));
         }
     }
 
@@ -591,7 +596,7 @@ trait InventoryNetworkPort
         }
         foreach ($ports as $port) {
             $netports_id = $this->addNetworkPort($port);
-            if (count($port->ipaddress)) {
+            if (count(($port->ipaddress ?? []))) {
                 $netnames_id = $this->addNetworkName($netports_id, $port->netname ?? null);
                 $this->addIPAddresses($port->ipaddress, $netnames_id);
             }

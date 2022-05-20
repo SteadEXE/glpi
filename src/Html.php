@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -37,6 +39,7 @@ use Glpi\Application\ErrorHandler;
 use Glpi\Application\View\TemplateRenderer;
 use Glpi\Console\Application;
 use Glpi\Plugin\Hooks;
+use Glpi\Toolbox\FrontEnd;
 use Glpi\Toolbox\Sanitizer;
 use ScssPhp\ScssPhp\Compiler;
 
@@ -296,7 +299,7 @@ class Html
     {
 
         if (is_array($value)) {
-            return array_map([__CLASS__, __METHOD__], $value);
+            return array_map(__METHOD__, $value);
         }
         $order   = ['\r\n',
             '\n',
@@ -615,9 +618,11 @@ class Html
     /**
      * Display a div containing messages set in session in the previous page
      **/
-    public static function displayMessageAfterRedirect()
+    public static function displayMessageAfterRedirect(bool $display_container = true)
     {
-        TemplateRenderer::getInstance()->display('components/messages_after_redirect_toasts.html.twig');
+        TemplateRenderer::getInstance()->display('components/messages_after_redirect_toasts.html.twig', [
+            'display_container' => $display_container
+        ]);
     }
 
 
@@ -1018,7 +1023,7 @@ class Html
                      id="{$id}_text">
                </div>
             </div>
-         HTML;
+HTML;
         }
 
         if ($params['message'] !== null) {
@@ -1200,21 +1205,21 @@ HTML;
             'js_files'  => [],
         ];
 
-        $tpl_vars['css_files'][] = 'public/lib/base.css';
+        $tpl_vars['css_files'][] = ['path' => 'public/lib/base.css'];
 
         if (isset($CFG_GLPI['notifications_ajax']) && $CFG_GLPI['notifications_ajax']) {
             Html::requireJs('notifications_ajax');
         }
 
-        $tpl_vars['css_files'][] = 'public/lib/leaflet.css';
+        $tpl_vars['css_files'][] = ['path' => 'public/lib/leaflet.css'];
         Html::requireJs('leaflet');
 
-        $tpl_vars['css_files'][] = 'public/lib/flatpickr.css';
+        $tpl_vars['css_files'][] = ['path' => 'public/lib/flatpickr.css'];
         // Include dark theme as base (may be cleaner look than light; colors overriden by GLPI's stylesheet)
-        $tpl_vars['css_files'][] = 'public/lib/flatpickr/themes/dark.css';
+        $tpl_vars['css_files'][] = ['path' => 'public/lib/flatpickr/themes/dark.css'];
         Html::requireJs('flatpickr');
 
-        $tpl_vars['css_files'][] = 'public/lib/photoswipe.css';
+        $tpl_vars['css_files'][] = ['path' => 'public/lib/photoswipe.css'];
         Html::requireJs('photoswipe');
 
        //on demand JS
@@ -1237,37 +1242,32 @@ HTML;
             }
 
             if (in_array('fullcalendar', $jslibs)) {
-                $tpl_vars['css_files'][] = 'public/lib/fullcalendar.css';
+                $tpl_vars['css_files'][] = ['path' => 'public/lib/fullcalendar.css'];
                 Html::requireJs('fullcalendar');
             }
 
             if (in_array('reservations', $jslibs)) {
-                $tpl_vars['css_files'][] = 'css/standalone/reservations.scss';
+                $tpl_vars['css_files'][] = ['path' => 'css/standalone/reservations.scss'];
                 Html::requireJs('reservations');
             }
 
-            if (in_array('gantt', $jslibs)) {
-                $tpl_vars['css_files'][] = 'public/lib/dhtmlx-gantt.css';
-                Html::requireJs('gantt');
-            }
-
             if (in_array('kanban', $jslibs)) {
-                $tpl_vars['js_modules'][] = 'js/modules/Kanban/Kanban.js';
+                $tpl_vars['js_modules'][] = ['path' => 'js/modules/Kanban/Kanban.js'];
                 Html::requireJs('kanban');
             }
 
             if (in_array('rateit', $jslibs)) {
-                $tpl_vars['css_files'][] = 'public/lib/jquery.rateit.css';
+                $tpl_vars['css_files'][] = ['path' => 'public/lib/jquery.rateit.css'];
                 Html::requireJs('rateit');
             }
 
             if (in_array('dashboard', $jslibs)) {
-                $tpl_vars['css_files'][] = 'css/standalone/dashboard.scss';
+                $tpl_vars['css_files'][] = ['path' => 'css/standalone/dashboard.scss'];
                 Html::requireJs('dashboard');
             }
 
             if (in_array('marketplace', $jslibs)) {
-                $tpl_vars['css_files'][] = 'css/standalone/marketplace.scss';
+                $tpl_vars['css_files'][] = ['path' => 'css/standalone/marketplace.scss'];
                 Html::requireJs('marketplace');
             }
 
@@ -1276,8 +1276,8 @@ HTML;
             }
 
             if (in_array('gridstack', $jslibs)) {
-                $tpl_vars['css_files'][] = 'public/lib/gridstack.css';
-                $tpl_vars['css_files'][] = 'css/standalone/gridstack-grids.scss';
+                $tpl_vars['css_files'][] = ['path' => 'public/lib/gridstack.css'];
+                $tpl_vars['css_files'][] = ['path' => 'css/standalone/gridstack-grids.scss'];
                 Html::requireJs('gridstack');
             }
 
@@ -1298,13 +1298,13 @@ HTML;
             }
 
             if (in_array('charts', $jslibs)) {
-                $tpl_vars['css_files'][] = 'public/lib/chartist.css';
-                $tpl_vars['css_files'][] = 'css/standalone/chartist.scss';
+                $tpl_vars['css_files'][] = ['path' => 'public/lib/chartist.css'];
+                $tpl_vars['css_files'][] = ['path' => 'css/standalone/chartist.scss'];
                 Html::requireJs('charts');
             }
 
             if (in_array('codemirror', $jslibs)) {
-                $tpl_vars['css_files'][] = 'public/lib/codemirror.css';
+                $tpl_vars['css_files'][] = ['path' => 'public/lib/codemirror.css'];
                 Html::requireJs('codemirror');
             }
 
@@ -1314,7 +1314,7 @@ HTML;
         }
 
         if (Session::getCurrentInterface() == "helpdesk") {
-            $tpl_vars['css_files'][] = 'public/lib/jquery.rateit.css';
+            $tpl_vars['css_files'][] = ['path' => 'public/lib/jquery.rateit.css'];
             Html::requireJs('rateit');
         }
 
@@ -1342,23 +1342,29 @@ HTML;
                 }
 
                 $plugin_web_dir  = Plugin::getWebDir($plugin, false);
+                $plugin_version  = Plugin::getPluginFilesVersion($plugin);
 
                 if (!is_array($files)) {
                     $files = [$files];
                 }
 
                 foreach ($files as $file) {
-                    $tpl_vars['css_files'][] = "$plugin_web_dir/$file";
+                    $tpl_vars['css_files'][] = [
+                        'path' => "$plugin_web_dir/$file",
+                        'options' => [
+                            'version' => $plugin_version,
+                        ]
+                    ];
                 }
             }
         }
-        $tpl_vars['css_files'][] = 'css/palettes/' . $theme . '.scss';
+        $tpl_vars['css_files'][] = ['path' => 'css/palettes/' . $theme . '.scss'];
 
-        $tpl_vars['js_files'][] = 'public/lib/base.js';
+        $tpl_vars['js_files'][] = ['path' => 'public/lib/base.js'];
 
        // Search
-        $tpl_vars['js_modules'][] = 'js/modules/Search/ResultsView.js';
-        $tpl_vars['js_modules'][] = 'js/modules/Search/Table.js';
+        $tpl_vars['js_modules'][] = ['path' => 'js/modules/Search/ResultsView.js'];
+        $tpl_vars['js_modules'][] = ['path' => 'js/modules/Search/Table.js'];
 
         TemplateRenderer::getInstance()->display('layout/parts/head.html.twig', $tpl_vars);
 
@@ -1616,13 +1622,16 @@ HTML;
                 'content' => [
                     'ticket' => [
                         'links' => [
-                            'add'       => '/front/helpdesk.public.php?create_ticket=1',
                             'search'    => Ticket::getSearchURL(),
                             'lists'     => '',
                         ]
                     ]
                 ]
             ];
+
+            if (Session::haveRight("ticket", CREATE)) {
+                $menu['tickets']['content']['ticket']['links']['add'] = '/front/helpdesk.public.php?create_ticket=1';
+            }
         }
 
         if (Session::haveRight("reservation", ReservationItem::RESERVEANITEM)) {
@@ -1659,6 +1668,17 @@ HTML;
                     $link = "";
                     if (is_string($PLUGIN_HOOKS["helpdesk_menu_entry"][$plugin])) {
                         $link = $PLUGIN_HOOKS["helpdesk_menu_entry"][$plugin];
+
+                        // Ensure menu entries have all a starting `/`
+                        if (!str_starts_with($link, '/')) {
+                            $link = '/' . $link;
+                        }
+
+                        // Prefix with plugin path if plugin path is missing
+                        $plugin_dir = Plugin::getWebDir($plugin, false);
+                        if (!str_starts_with($link, '/' . $plugin_dir)) {
+                            $link = '/' . $plugin_dir . $link;
+                        }
                     }
                     $infos['page'] = $link;
                     $infos['title'] = $infos['name'];
@@ -1744,7 +1764,7 @@ HTML;
         $tpl_vars += self::getPageHeaderTplVars();
 
         $help_url_key = Session::getCurrentInterface() === 'central' ? 'central_doc_url' : 'helpdesk_doc_url';
-        $help_url = !empty($CFG_GLPI[$help_url_key]) ? $CFG_GLPI[$help_url_key] : 'http://glpi-project.org/help-central';
+        $help_url = !empty($CFG_GLPI[$help_url_key]) ? $CFG_GLPI[$help_url_key] : 'https://glpi-project.org/documentation/';
 
         $tpl_vars['help_url'] = $help_url;
 
@@ -1810,7 +1830,7 @@ HTML;
                 $scripts = [$scripts];
             }
             foreach ($scripts as $script) {
-                $tpl_vars['js_files'][] = $script;
+                $tpl_vars['js_files'][] = ['path' => $script];
             }
         }
         $_SESSION['glpi_js_toload'] = [];
@@ -1823,12 +1843,12 @@ HTML;
                 $CFG_GLPI["languages"][$_SESSION['glpilanguage']][2]
             );
             if (file_exists(GLPI_ROOT . '/' . $filename)) {
-                $tpl_vars['js_files'][] = $filename;
+                $tpl_vars['js_files'][] = ['path' => $filename];
             }
         }
 
-        $tpl_vars['js_files'][] = 'js/common.js';
-        $tpl_vars['js_files'][] = 'js/misc.js';
+        $tpl_vars['js_files'][] = ['path' => 'js/common.js'];
+        $tpl_vars['js_files'][] = ['path' => 'js/misc.js'];
 
         if (isset($PLUGIN_HOOKS['add_javascript']) && count($PLUGIN_HOOKS['add_javascript'])) {
             foreach ($PLUGIN_HOOKS["add_javascript"] as $plugin => $files) {
@@ -1837,13 +1857,19 @@ HTML;
                 }
                 $plugin_root_dir = Plugin::getPhpDir($plugin, true);
                 $plugin_web_dir  = Plugin::getWebDir($plugin, false);
+                $plugin_version  = Plugin::getPluginFilesVersion($plugin);
 
                 if (!is_array($files)) {
                     $files = [$files];
                 }
                 foreach ($files as $file) {
                     if (file_exists($plugin_root_dir . "/{$file}")) {
-                        $tpl_vars['js_files'][] = $plugin_web_dir . "/{$file}";
+                        $tpl_vars['js_files'][] = [
+                            'path' => $plugin_web_dir . "/{$file}",
+                            'options' => [
+                                'version' => $plugin_version,
+                            ]
+                        ];
                     } else {
                         trigger_error("{$file} file not found from plugin $plugin!", E_USER_WARNING);
                     }
@@ -1857,13 +1883,19 @@ HTML;
                 }
                 $plugin_root_dir = Plugin::getPhpDir($plugin, true);
                 $plugin_web_dir  = Plugin::getWebDir($plugin, false);
+                $plugin_version  = Plugin::getPluginFilesVersion($plugin);
 
                 if (!is_array($files)) {
                     $files = [$files];
                 }
                 foreach ($files as $file) {
                     if (file_exists($plugin_root_dir . "/{$file}")) {
-                        $tpl_vars['js_modules'][] = $plugin_web_dir . "/{$file}";
+                        $tpl_vars['js_modules'][] = [
+                            'path' => $plugin_web_dir . "/{$file}",
+                            'options' => [
+                                'version' => $plugin_version,
+                            ]
+                        ];
                     } else {
                         trigger_error("{$file} file not found from plugin $plugin!", E_USER_WARNING);
                     }
@@ -3768,12 +3800,15 @@ JS;
         $content_css = preg_replace('/^.*href="([^"]+)".*$/', '$1', self::scss('css/palettes/' . $_SESSION['glpipalette'] ?? 'auror'))
          . ',' . preg_replace('/^.*href="([^"]+)".*$/', '$1', self::css('public/lib/base.css'));
 
-        $cache_suffix = '?v=' . GLPI_VERSION;
+        $cache_suffix = '?v=' . FrontEnd::getVersionCacheKey(GLPI_VERSION);
         $readonlyjs   = $readonly ? 'true' : 'false';
 
         $invalid_elements = 'applet,canvas,embed,form,object';
         if (!$enable_images) {
             $invalid_elements .= ',img';
+        }
+        if (!GLPI_ALLOW_IFRAME_IN_RICH_TEXT) {
+            $invalid_elements .= ',iframe';
         }
 
         $plugins = [
@@ -3783,10 +3818,8 @@ JS;
             'fullscreen',
             'link',
             'lists',
-            'paste',
             'quickbars',
             'searchreplace',
-            'tabfocus',
             'table',
         ];
         if ($enable_images) {
@@ -3813,6 +3846,7 @@ JS;
 
             // init editor
             tinyMCE.init(Object.assign({
+               branding: false,
                selector: '#{$name}',
 
                plugins: {$pluginsjs},
@@ -3833,20 +3867,19 @@ JS;
                // inline toolbar configuration
                menubar: false,
                toolbar: richtext_layout == 'classic'
-                  ? 'styleselect | bold italic | forecolor backcolor | bullist numlist outdent indent | emoticons table link image | code fullscreen'
+                  ? 'styles | bold italic | forecolor backcolor | bullist numlist outdent indent | emoticons table link image | code fullscreen'
                   : false,
                quickbars_insert_toolbar: richtext_layout == 'inline'
                   ? 'emoticons quicktable quickimage quicklink | bullist numlist | outdent indent '
                   : false,
                quickbars_selection_toolbar: richtext_layout == 'inline'
-                  ? 'bold italic | styleselect | forecolor backcolor '
+                  ? 'bold italic | styles | forecolor backcolor '
                   : false,
-               contextmenu: 'emoticons table image link | undo redo | code fullscreen',
+               contextmenu: 'copy paste | emoticons table image link | undo redo | code fullscreen',
 
                // Content settings
                entity_encoding: 'raw',
                invalid_elements: '{$invalid_elements}',
-               paste_data_images: true,
                readonly: {$readonlyjs},
                relative_urls: false,
                remove_script_host: false,
@@ -4109,7 +4142,7 @@ JAVASCRIPT
             echo "<tr><th>KEY</th><th>=></th><th>VALUE</th></tr>";
 
             foreach ($tab as $key => $val) {
-                $key = Sanitizer::sanitize($key, false);
+                $key = Sanitizer::encodeHtmlSpecialChars($key);
                 echo "<tr><td>";
                 echo $key;
                 $is_array = is_array($val);
@@ -4435,8 +4468,10 @@ JAVASCRIPT
         if (empty($btimage)) {
             $link .= $btlabel;
         } else {
-            if (substr($btimage, 0, strlen('fa-')) === 'fa-') {
+            if (strpos($btimage, 'fa-') === 0) {
                 $link .= "<span class='fas $btimage' title='$btlabel'><span class='sr-only'>$btlabel</span>";
+            } else if (strpos($btimage, 'ti-') === 0) {
+                $link .= "<span class='ti $btimage' title='$btlabel'><span class='sr-only'>$btlabel</span>";
             } else {
                 $link .= "<img src='$btimage' title='$btlabel' alt='$btlabel' class='pointer'>";
             }
@@ -5231,7 +5266,7 @@ JAVASCRIPT
                  aria-valuemax="{$max}">
             </div>
          </div>
-      HTML;
+HTML;
         return $html;
     }
 
@@ -5331,7 +5366,7 @@ JAVASCRIPT
         $url = self::getPrefixedUrl($url);
 
         if ($version) {
-            $url .= '?v=' . $version;
+            $url .= '?v=' . FrontEnd::getVersionCacheKey($version);
         }
 
         return sprintf('<script type="%s" src="%s"></script>', $type, $url);
@@ -5414,7 +5449,7 @@ JAVASCRIPT
             unset($options['version']);
         }
 
-        $url .= ((strpos($url, '?') !== false) ? '&' : '?') . 'v=' . $version;
+        $url .= ((strpos($url, '?') !== false) ? '&' : '?') . 'v=' . FrontEnd::getVersionCacheKey($version);
 
         return sprintf(
             '<link rel="stylesheet" type="text/css" href="%s" %s>',
@@ -5488,7 +5523,10 @@ JAVASCRIPT
             if ($p['showtitle']) {
                 $display .= "<b>";
                 $display .= sprintf(__('%1$s (%2$s)'), __('File(s)'), Document::getMaxUploadSize());
-                $display .= DocumentType::showAvailableTypesLink(['display' => false]);
+                $display .= DocumentType::showAvailableTypesLink([
+                    'display' => false,
+                    'rand'    => $p['rand']
+                ]);
                 if ($p['required']) {
                     $display .= '<span class="required">*</span>';
                 }
@@ -6135,7 +6173,7 @@ JAVASCRIPT
      */
     public static function getCopyrightMessage($withVersion = true)
     {
-        $message = "<a href=\"http://glpi-project.org/\" title=\"Powered by Teclib and contributors\" class=\"copyright\">";
+        $message = "<a href=\"https://glpi-project.org/\" title=\"Powered by Teclib and contributors\" class=\"copyright\">";
         $message .= "GLPI ";
        // if required, add GLPI version (eg not for login page)
         if ($withVersion) {
@@ -6200,10 +6238,6 @@ JAVASCRIPT
                         }
                     }
                 }
-                break;
-            case 'gantt':
-                $_SESSION['glpi_js_toload'][$name][] = 'public/lib/dhtmlx-gantt.js';
-                $_SESSION['glpi_js_toload'][$name][] = 'js/gantt-helper.js';
                 break;
             case 'kanban':
                 break;
@@ -6334,9 +6368,6 @@ JAVASCRIPT
             echo Html::scriptBlock($js);
         }
 
-       // add Ajax display message after redirect
-        Html::displayAjaxMessageAfterRedirect();
-
        // Add specific javascript for plugins
         if (isset($PLUGIN_HOOKS[Hooks::ADD_JAVASCRIPT]) && count($PLUGIN_HOOKS[Hooks::ADD_JAVASCRIPT])) {
             foreach ($PLUGIN_HOOKS[Hooks::ADD_JAVASCRIPT] as $plugin => $files) {
@@ -6345,7 +6376,7 @@ JAVASCRIPT
                 }
                 $plugin_root_dir = Plugin::getPhpDir($plugin, true);
                 $plugin_web_dir  = Plugin::getWebDir($plugin, false);
-                $version = Plugin::getInfo($plugin, 'version');
+                $version = Plugin::getPluginFilesVersion($plugin);
                 if (!is_array($files)) {
                     $files = [$files];
                 }
@@ -6369,7 +6400,7 @@ JAVASCRIPT
                 }
                 $plugin_root_dir = Plugin::getPhpDir($plugin, true);
                 $plugin_web_dir  = Plugin::getWebDir($plugin, false);
-                $version = Plugin::getInfo($plugin, 'version');
+                $version = Plugin::getPluginFilesVersion($plugin);
                 if (!is_array($files)) {
                     $files = [$files];
                 }
@@ -6414,7 +6445,6 @@ JAVASCRIPT
             $debug = (isset($_SESSION['glpi_use_mode'])
                    && $_SESSION['glpi_use_mode'] == Session::DEBUG_MODE ? true : false);
             $cfg_glpi = "var CFG_GLPI  = " . json_encode(Config::getSafeConfig(true), $debug ? JSON_PRETTY_PRINT : 0) . ";";
-            $cfg_glpi .= "CFG_GLPI['gantt_date_format'] = " . json_encode(Toolbox::getDateFormat('gantt')) . ";";
         }
 
         $plugins_path = [];
@@ -6778,7 +6808,7 @@ HTML;
         } catch (\Throwable $e) {
             ErrorHandler::getInstance()->handleException($e, true);
             if (isset($args['debug'])) {
-                $msg = 'An error occured during SCSS compilation: ' . $e->getMessage();
+                $msg = 'An error occurred during SCSS compilation: ' . $e->getMessage();
                 $msg = str_replace(["\n", "\"", "'"], ['\00000a', '\0022', '\0027'], $msg);
                 $css = <<<CSS
               html::before {

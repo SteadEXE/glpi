@@ -2,13 +2,15 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2010-2022 by the FusionInventory Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +18,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -50,6 +53,9 @@ class Software extends InventoryAsset
     private $softwares = [];
     private $versions = [];
     private $current_versions = [];
+    private $added_versions   = [];
+    private $updated_versions = [];
+    private $deleted_versions = [];
     private $entities_id_software;
 
     /** @var array */
@@ -66,10 +72,10 @@ class Software extends InventoryAsset
             'system_category' => '_system_category'
         ];
 
-       //Dictionary for software
+        //Dictionary for software
         $rulecollection = new RuleDictionnarySoftwareCollection();
 
-       //Get the default entity for software, as defined in entity configuration
+        //Get the default entity for software, as defined in entity configuration
         $entities_id = $this->entities_id;
         $entities_id_software = Entity::getUsedConfig(
             'entities_strategy_software',
@@ -77,20 +83,20 @@ class Software extends InventoryAsset
             'entities_id_software'
         );
 
-       //By default a software is not recursive
+        //By default a software is not recursive
         $is_recursive = 0;
 
-       //Configuration says that software can be created in the computer's entity
+        //Configuration says that software can be created in the computer's entity
         if ($entities_id_software < 0) {
            //inherit from main asset's entity
             $entities_id_software = $entities_id;
         } else if ($entities_id_software != $entities_id) {
-           //Software created in a different entity than main asset one
+            //Software created in a different entity than main asset one
             $is_recursive = 1;
         }
         $this->entities_id_software = $entities_id_software;
 
-       //Count the number of software dictionary rules
+        //Count the number of software dictionary rules
         $count_rules = \countElementsInTable(
             "glpi_rules",
             [
@@ -121,14 +127,14 @@ class Software extends InventoryAsset
                 }
             }
 
-           //If the software name exists and is defined
+            //If the software name exists and is defined
             if (property_exists($val, 'name') && $val->name != '') {
                 $val->name = trim(preg_replace('/\s+/', ' ', $val->name));
 
                 $res_rule       = [];
 
-               //Only play rules engine if there's at least one rule
-               //for software dictionary
+                //Only play rules engine if there's at least one rule
+                //for software dictionary
                 if ($count_rules > 0) {
                     $rule_input = [
                         "name"               => $val->name,
@@ -146,16 +152,16 @@ class Software extends InventoryAsset
                     continue;
                 }
 
-               //If the name has been modified by the rules engine
+                //If the name has been modified by the rules engine
                 if (isset($res_rule["name"])) {
                     $val->name = $res_rule["name"];
                 }
-               //If the version has been modified by the rules engine
+                //If the version has been modified by the rules engine
                 if (isset($res_rule["version"])) {
                     $val->version = $res_rule["version"];
                 }
 
-               //If the manufacturer has been modified or set by the rules engine
+                //If the manufacturer has been modified or set by the rules engine
                 if (isset($res_rule["manufacturer"])) {
                     $val->manufacturers_id = Dropdown::import(
                         'Manufacturer',
@@ -179,53 +185,53 @@ class Software extends InventoryAsset
                     $val->manufacturers_id = 0;
                 }
 
-               //The rules engine has modified the entity
-               //(meaning that the software is recursive and defined
-               //in an upper entity)
+                //The rules engine has modified the entity
+                //(meaning that the software is recursive and defined
+                //in an upper entity)
                 if (isset($res_rule['new_entities_id'])) {
                     $val->entities_id = $res_rule['new_entities_id'];
                     $is_recursive    = 1;
                 }
 
-               //Entity is not set, get from configuration
+                //Entity is not set, get from configuration
                 if (!property_exists($val, 'entities_id') || $val->entities_id == '') {
                     $val->entities_id = $entities_id_software;
                 }
-               //version is undefined, set it to blank
+                //version is undefined, set it to blank
                 if (!property_exists($val, 'version')) {
                     $val->version = '';
                 }
-               //arch is undefined, set it to blankk
+                //arch is undefined, set it to blankk
                 if (!property_exists($val, 'arch')) {
                     $val->arch = '';
                 }
 
-               //not a template, not deleted, ...
+                //not a template, not deleted, ...
                 $val->is_template_item = 0;
                 $val->is_deleted_item = 0;
                 $val->operatingsystems_id = 0;
 
-               //Store recursivity
+                //Store recursivity
                 $val->is_recursive = $is_recursive;
 
-               //String with the manufacturer
+                //String with the manufacturer
                 $comp_key = $this->getSimpleCompareKey($val);
 
                 if ($val->manufacturers_id == 0) {
-                   //soft w/o manufacturer. Keep it to see later if one exists with manufacturer
+                    //soft w/o manufacturer. Keep it to see later if one exists with manufacturer
                     $without_manufacturer[$comp_key] = $k;
                 } else {
                     $with_manufacturer[$comp_key] = true;
                 }
             }
 
-           //ensure all columns are present
+            //ensure all columns are present
             if (!property_exists($val, 'comment')) {
                 $val->comment = null;
             }
         }
 
-       //NOTE: A same software may have a manufacturer or not. Keep the one with manufacturer.
+        //NOTE: A same software may have a manufacturer or not. Keep the one with manufacturer.
         foreach ($without_manufacturer as $comp_key => $data_index) {
             if (isset($with_manufacturer[$comp_key])) {
                //same software do exists with a manufacturer, remove current duplicate
@@ -240,9 +246,9 @@ class Software extends InventoryAsset
     {
         global $DB;
 
-       //Get configured entity
+        //Get configured entity
         $entities_id  = $this->entities_id_software;
-       //Get operating system
+        //Get operating system
         $operatingsystems_id = 0;
 
         if (isset($this->extra_data[OperatingSystem::class])) {
@@ -251,13 +257,16 @@ class Software extends InventoryAsset
         }
 
         $db_software = [];
+        $db_software_wo_version = [];
 
-       //Load existing software versions from db. Grab required fields
-       //to build comparison key @see getFullCompareKey
+        //Load existing software versions from db. Grab required fields
+        //to build comparison key @see getFullCompareKey
         $iterator = $DB->request([
             'SELECT' => [
-                'glpi_items_softwareversions.id as sid',
+                'glpi_items_softwareversions.id as item_soft_version_id',
+                'glpi_softwares.id as softid',
                 'glpi_softwares.name',
+                'glpi_softwareversions.id AS versionid',
                 'glpi_softwareversions.name AS version',
                 'glpi_softwareversions.arch',
                 'glpi_softwares.manufacturers_id',
@@ -287,34 +296,67 @@ class Software extends InventoryAsset
         ]);
 
         foreach ($iterator as $data) {
-            $softid = $data['sid'];
-            unset($data['sid']);
-            $db_software[$this->getFullCompareKey((object)$data)] = $softid;
+            $item_soft_v_id = $data['item_soft_version_id'];
+            unset($data['item_soft_version_id']);
+            $key_w_version = $this->getFullCompareKey((object)$data);
+            $key_wo_version = $this->getFullCompareKey((object)$data, false);
+            $db_software[$key_w_version] = $item_soft_v_id;
+            $db_software_wo_version[$key_wo_version] = [
+                'versionid' => $data['versionid'],
+                'softid'    => $data['softid'],
+                'version'   => $data['version'],
+                'name'      => $data['name'],
+            ];
         }
 
-       //check for existing links
+        //check for existing links
         $count_import = count($this->data);
         foreach ($this->data as $k => &$val) {
-           //operating system id is not known before handle(); set it in value
+            //operating system id is not known before handle(); set it in value
             $val->operatingsystems_id = $operatingsystems_id;
-            $key = $this->getFullCompareKey($val);
-            $dedup_vkey = $key . $this->getVersionKey($val, 0);
-            if (isset($db_software[$key])) {
-               //link already exists in database, drop it
+
+            $key_w_version  = $this->getFullCompareKey($val);
+            $key_wo_version = $this->getFullCompareKey($val, false);
+
+            $old_version = $db_software_wo_version[$key_wo_version]['version'] ?? "";
+            $new_version = $val->version;
+
+            $dedup_vkey = $key_w_version . $this->getVersionKey($val, 0);
+            if (isset($db_software[$key_w_version])) {
+                // software exist with the same version
                 unset($this->data[$k]);
-                unset($db_software[$key]);
+                unset($db_software[$key_w_version]);
+                unset($db_software_wo_version[$key_wo_version]);
                 $this->current_versions[$dedup_vkey] = true;
             } else {
-                if (isset($this->current_versions[$dedup_vkey])) {
+                if ($old_version != "" && $old_version != $new_version) {
+                    // software exist but with different version
+                    $this->updated_versions[$key_wo_version] = [
+                        'name' => $val->name,
+                        'old'  => $old_version,
+                        'new'  => $new_version,
+                    ];
+
+                    unset($db_software_wo_version[$key_wo_version]);
+                } elseif (isset($this->current_versions[$dedup_vkey])) {
+                    // software addition already done (duplicate)
                     unset($this->data[$k]);
                 } else {
+                    // software addition
                     $this->current_versions[$dedup_vkey] = true;
+                    $this->added_versions[$key_wo_version] = [
+                        'name'    => $val->name,
+                        'version' => $new_version,
+                    ];
                 }
             }
         }
 
-       //not found version means soft has been removed or updated, drop it
+        // track deleted versions (without those which version changed)
+        $this->deleted_versions = array_values($db_software_wo_version);
+
         if (count($db_software) > 0 && (!$this->main_asset || !$this->main_asset->isPartial() || $this->main_asset->isPartial() && $count_import)) {
+            //not found version means soft has been removed or updated, drop it
             $DB->delete(
                 'glpi_items_softwareversions',
                 [
@@ -323,8 +365,11 @@ class Software extends InventoryAsset
             );
         }
 
+        // store changes to logs
+        $this->logSoftwares();
+
         if (!count($this->data)) {
-           //nothing to do!
+            //nothing to do!
             return;
         }
 
@@ -386,11 +431,11 @@ class Software extends InventoryAsset
      *
      * @return string
      */
-    protected function getFullCompareKey(\stdClass $val): string
+    protected function getFullCompareKey(\stdClass $val, bool $with_version = true): string
     {
         return $this->getCompareKey([
             Toolbox::slugify($val->name),
-            strtolower($val->version),
+            $with_version ? strtolower($val->version) : '',
             strtolower($val->arch ?? ''),
             $val->manufacturers_id,
             $val->entities_id,
@@ -493,7 +538,7 @@ class Software extends InventoryAsset
         $entities_id  = $this->entities_id_software;
 
         if (!count($this->softwares)) {
-           //no existing software, no existing versions :)
+            //no existing software, no existing versions :)
             return;
         }
 
@@ -573,6 +618,8 @@ class Software extends InventoryAsset
             if (!isset($this->softwares[$skey])) {
                 $stmt_columns = $this->cleanInputToPrepare((array)$val, $soft_fields);
 
+                $software->handleCategoryRules($stmt_columns);
+
                 if ($stmt === null) {
                     $stmt_types = str_repeat('s', count($stmt_columns));
                     $reference = array_fill_keys(
@@ -586,11 +633,17 @@ class Software extends InventoryAsset
                     $stmt = $DB->prepare($insert_query);
                 }
 
-                $software->handleCategoryRules($stmt_columns);
                 $stmt_values = array_values($stmt_columns);
                 $stmt->bind_param($stmt_types, ...$stmt_values);
                 $DB->executeStatement($stmt);
                 $softwares_id = $DB->insertId();
+                \Log::history(
+                    $softwares_id,
+                    'Software',
+                    [0, '', ''],
+                    0,
+                    \Log::HISTORY_CREATE_ITEM
+                );
                 $this->softwares[$skey] = $softwares_id;
             }
         }
@@ -649,6 +702,13 @@ class Software extends InventoryAsset
                  $stmt->bind_param($stmt_types, ...$stmt_values);
                  $DB->executeStatement($stmt);
                  $versions_id = $DB->insertId();
+                \Log::history(
+                    $softwares_id,
+                    'Software',
+                    [0, '', sprintf(__('%1$s (%2$s)'), $version_name, $versions_id)],
+                    'SoftwareVersion',
+                    \Log::HISTORY_ADD_SUBITEM
+                );
                  $this->versions[$vkey] = $versions_id;
             }
         }
@@ -731,6 +791,93 @@ class Software extends InventoryAsset
                 $input['date_install']
             );
             $DB->executeStatement($stmt);
+
+            // log the new installation into software history
+            $version_name = $val->version;
+            $asset_name   = $this->item->fields['name'];
+            \Log::history(
+                $softwares_id,
+                'Software',
+                [0, '', sprintf(__('%1$s - %2$s'), $version_name, $asset_name)],
+                'Item_SoftwareVersion',
+                \Log::HISTORY_ADD_SUBITEM
+            );
+
+            // log the new installation into software version history
+            \Log::history(
+                $versions_id,
+                'SoftwareVersion',
+                [0, '', $asset_name], // we just need the computer name in software version historical
+                'Item_SoftwareVersion',
+                \Log::HISTORY_ADD_SUBITEM
+            );
+        }
+    }
+
+    /**
+     * logs changes of softwares in the history
+     *
+     * @return void
+     */
+    public function logSoftwares()
+    {
+        foreach ($this->added_versions as $software_data) {
+            \Log::history(
+                $this->item->fields['id'],
+                $this->item->getType(),
+                [0, '', sprintf(__('%1$s - %2$s'), $software_data['name'], $software_data['version'])],
+                'Software',
+                \Log::HISTORY_ADD_SUBITEM
+            );
+        }
+
+        foreach ($this->updated_versions as $software_data) {
+            \Log::history(
+                $this->item->fields['id'],
+                $this->item->getType(),
+                [
+                    0,
+                    '',
+                    sprintf('%1$s - %2$s -> %3$s', $software_data['name'], $software_data['old'], $software_data['new']),
+                ],
+                'Software',
+                \Log::HISTORY_UPDATE_SUBITEM
+            );
+        }
+
+        foreach ($this->deleted_versions as $software_data) {
+            $softwares_id  = $software_data['softid'];
+            $versions_id   = $software_data['versionid'];
+            $software_name = $software_data['name'];
+            $version_name  = $software_data['version'];
+            $asset_name    = $this->item->fields['name'];
+
+            // log into asset
+            \Log::history(
+                $this->item->fields['id'],
+                $this->item->getType(),
+                [0, '', sprintf('%1$s - %2$s', $software_name, $version_name)],
+                'Software',
+                \Log::HISTORY_DELETE_SUBITEM
+            );
+
+            // log the removal of installation into software history
+            \Log::history(
+                $softwares_id,
+                'Software',
+                [0, '', sprintf(__('%1$s - %2$s'), $version_name, $asset_name)],
+                'Item_SoftwareVersion',
+                \Log::HISTORY_DELETE_SUBITEM
+            );
+
+            // log the removal of installation into software version history
+            \Log::history(
+                $versions_id,
+                'SoftwareVersion',
+                [0, '', $asset_name], // we just need the computer name in software version historical
+                'Item_SoftwareVersion',
+                \Log::HISTORY_DELETE_SUBITEM
+            );
         }
     }
 

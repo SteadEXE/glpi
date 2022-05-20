@@ -1,12 +1,13 @@
 --
 -- ---------------------------------------------------------------------
+--
 -- GLPI - Gestionnaire Libre de Parc Informatique
--- Copyright (C) 2015-2022 Teclib' and contributors.
 --
 -- http://glpi-project.org
 --
--- based on GLPI - Gestionnaire Libre de Parc Informatique
--- Copyright (C) 2003-2014 by the INDEPNET Development Team.
+-- @copyright 2015-2022 Teclib' and contributors.
+-- @copyright 2003-2014 by the INDEPNET Development Team.
+-- @licence   https://www.gnu.org/licenses/gpl-3.0.html
 --
 -- ---------------------------------------------------------------------
 --
@@ -14,18 +15,19 @@
 --
 -- This file is part of GLPI.
 --
--- GLPI is free software; you can redistribute it and/or modify
+-- This program is free software: you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
--- the Free Software Foundation; either version 2 of the License, or
+-- the Free Software Foundation, either version 3 of the License, or
 -- (at your option) any later version.
 --
--- GLPI is distributed in the hope that it will be useful,
+-- This program is distributed in the hope that it will be useful,
 -- but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 -- GNU General Public License for more details.
 --
 -- You should have received a copy of the GNU General Public License
--- along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+-- along with this program.  If not, see <https://www.gnu.org/licenses/>.
+--
 -- ---------------------------------------------------------------------
 --
 
@@ -980,6 +982,7 @@ CREATE TABLE `glpi_computers` (
   `uuid` varchar(255) DEFAULT NULL,
   `date_creation` timestamp NULL DEFAULT NULL,
   `is_recursive` tinyint NOT NULL DEFAULT '0',
+  `last_inventory_update` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `date_mod` (`date_mod`),
   KEY `name` (`name`),
@@ -2718,6 +2721,7 @@ CREATE TABLE `glpi_entities` (
   `send_licenses_alert_before_delay` int NOT NULL DEFAULT '-2',
   `use_certificates_alert` int NOT NULL DEFAULT '-2',
   `send_certificates_alert_before_delay` int NOT NULL DEFAULT '-2',
+  `certificates_alert_repeat_interval` int NOT NULL DEFAULT '-2',
   `use_contracts_alert` int NOT NULL DEFAULT '-2',
   `send_contracts_alert_before_delay` int NOT NULL DEFAULT '-2',
   `use_infocoms_alert` int NOT NULL DEFAULT '-2',
@@ -5274,6 +5278,7 @@ CREATE TABLE `glpi_phones` (
   `uuid` varchar(255) DEFAULT NULL,
   `date_creation` timestamp NULL DEFAULT NULL,
   `is_recursive` tinyint NOT NULL DEFAULT '0',
+  `last_inventory_update` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `name` (`name`),
   KEY `is_template` (`is_template`),
@@ -6461,6 +6466,7 @@ CREATE TABLE `glpi_slms` (
   `entities_id` int unsigned NOT NULL DEFAULT '0',
   `is_recursive` tinyint NOT NULL DEFAULT '0',
   `comment` text,
+  `use_ticket_calendar` tinyint NOT NULL DEFAULT '0',
   `calendars_id` int unsigned NOT NULL DEFAULT '0',
   `date_mod` timestamp NULL DEFAULT NULL,
   `date_creation` timestamp NULL DEFAULT NULL,
@@ -6484,6 +6490,7 @@ CREATE TABLE `glpi_slas` (
   `type` int NOT NULL DEFAULT '0',
   `comment` text,
   `number_time` int NOT NULL,
+  `use_ticket_calendar` tinyint NOT NULL DEFAULT '0',
   `calendars_id` int unsigned NOT NULL DEFAULT '0',
   `date_mod` timestamp NULL DEFAULT NULL,
   `definition_time` varchar(255) DEFAULT NULL,
@@ -6511,6 +6518,7 @@ CREATE TABLE `glpi_olas` (
   `type` int NOT NULL DEFAULT '0',
   `comment` text,
   `number_time` int NOT NULL,
+  `use_ticket_calendar` tinyint NOT NULL DEFAULT '0',
   `calendars_id` int unsigned NOT NULL DEFAULT '0',
   `date_mod` timestamp NULL DEFAULT NULL,
   `definition_time` varchar(255) DEFAULT NULL,
@@ -6835,7 +6843,7 @@ CREATE TABLE `glpi_states` (
   `is_visible_cluster` tinyint NOT NULL DEFAULT '1',
   `is_visible_contract` tinyint NOT NULL DEFAULT '1',
   `is_visible_appliance` tinyint NOT NULL DEFAULT '1',
-  `is_visible_database` tinyint NOT NULL DEFAULT '1',
+  `is_visible_databaseinstance` tinyint NOT NULL DEFAULT '1',
   `is_visible_cable` tinyint NOT NULL DEFAULT '1',
   `date_mod` timestamp NULL DEFAULT NULL,
   `date_creation` timestamp NULL DEFAULT NULL,
@@ -6861,7 +6869,7 @@ CREATE TABLE `glpi_states` (
   KEY `is_visible_cluster` (`is_visible_cluster`),
   KEY `is_visible_contract` (`is_visible_contract`),
   KEY `is_visible_appliance` (`is_visible_appliance`),
-  KEY `is_visible_database` (`is_visible_database`),
+  KEY `is_visible_databaseinstance` (`is_visible_databaseinstance`),
   KEY `is_visible_cable` (`is_visible_cable`),
   KEY `date_mod` (`date_mod`),
   KEY `date_creation` (`date_creation`)
@@ -8648,6 +8656,7 @@ CREATE TABLE `glpi_appliances` (
   `serial` varchar(255) DEFAULT NULL,
   `otherserial` varchar(255) DEFAULT NULL,
   `is_helpdesk_visible` tinyint NOT NULL DEFAULT '1',
+  `pictures` text,
   PRIMARY KEY (`id`),
   UNIQUE KEY `unicity` (`externalidentifier`),
   KEY `entities_id` (`entities_id`),
@@ -8777,10 +8786,12 @@ CREATE TABLE `glpi_lockedfields` (
   `value` varchar(255) DEFAULT NULL,
   `date_mod` timestamp NULL DEFAULT NULL,
   `date_creation` timestamp NULL DEFAULT NULL,
+  `is_global` tinyint NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `unicity` (`itemtype`,`items_id`,`field`),
   KEY `date_mod` (`date_mod`),
-  KEY `date_creation` (`date_creation`)
+  KEY `date_creation` (`date_creation`),
+  KEY `is_global` (`is_global`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 DROP TABLE IF EXISTS `glpi_unmanageds`;
@@ -8873,11 +8884,15 @@ CREATE TABLE `glpi_printerlogs` (
   `bw_copies` int NOT NULL DEFAULT '0',
   `color_copies` int NOT NULL DEFAULT '0',
   `scanned` int NOT NULL DEFAULT '0',
+  `date` date DEFAULT NULL,
+  `date_creation` timestamp NULL DEFAULT NULL,
+  `date_mod` timestamp NULL DEFAULT NULL,
   `faxed` int NOT NULL DEFAULT '0',
-  `date` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `printers_id` (`printers_id`),
-  KEY `date` (`date`)
+  UNIQUE KEY `unicity` (`printers_id`,`date`),
+  KEY `date` (`date`),
+  KEY `date_mod` (`date_mod`),
+  KEY `date_creation` (`date_creation`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 
@@ -8898,15 +8913,19 @@ CREATE TABLE `glpi_networkportconnectionlogs` (
 DROP TABLE IF EXISTS `glpi_networkportmetrics`;
 CREATE TABLE `glpi_networkportmetrics` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `date` timestamp NULL DEFAULT NULL,
+  `date` date DEFAULT NULL,
   `ifinbytes` bigint NOT NULL DEFAULT '0',
   `ifinerrors` bigint NOT NULL DEFAULT '0',
   `ifoutbytes` bigint NOT NULL DEFAULT '0',
   `ifouterrors` bigint NOT NULL DEFAULT '0',
   `networkports_id` int unsigned NOT NULL DEFAULT '0',
+  `date_creation` timestamp NULL DEFAULT NULL,
+  `date_mod` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `unicity` (`networkports_id`,`date`),
   KEY `date` (`date`),
-  KEY `networkports_id` (`networkports_id`)
+  KEY `date_creation` (`date_creation`),
+  KEY `date_mod` (`date_mod`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 DROP TABLE IF EXISTS `glpi_refusedequipments`;
@@ -9144,6 +9163,7 @@ CREATE TABLE `glpi_databases` (
   `is_onbackup` tinyint NOT NULL DEFAULT '0',
   `is_active` tinyint NOT NULL DEFAULT '0',
   `is_deleted` tinyint NOT NULL DEFAULT '0',
+  `is_dynamic` tinyint NOT NULL DEFAULT '0',
   `date_creation` timestamp NULL DEFAULT NULL,
   `date_mod` timestamp NULL DEFAULT NULL,
   `date_update` timestamp NULL DEFAULT NULL,
@@ -9154,6 +9174,7 @@ CREATE TABLE `glpi_databases` (
   KEY `name` (`name`),
   KEY `is_active` (`is_active`),
   KEY `is_deleted` (`is_deleted`),
+  KEY `is_dynamic` (`is_dynamic`),
   KEY `date_creation` (`date_creation`),
   KEY `date_mod` (`date_mod`),
   KEY `databaseinstances_id` (`databaseinstances_id`)

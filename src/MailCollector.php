@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -385,7 +387,7 @@ class MailCollector extends CommonDBTM
             $this->connect();
         } catch (\Throwable $e) {
             ErrorHandler::getInstance()->handleException($e);
-            echo __('An error occured trying to connect to collector.');
+            echo __('An error occurred trying to connect to collector.');
             return;
         }
 
@@ -691,7 +693,7 @@ class MailCollector extends CommonDBTM
             } catch (\Throwable $e) {
                 ErrorHandler::getInstance()->handleException($e);
                 Session::addMessageAfterRedirect(
-                    __('An error occured trying to connect to collector.') . "<br/>" . $e->getMessage(),
+                    __('An error occurred trying to connect to collector.') . "<br/>" . $e->getMessage(),
                     false,
                     ERROR
                 );
@@ -770,7 +772,7 @@ class MailCollector extends CommonDBTM
                               $rejinput['from']              = $requester;
                               $rejinput['to']                = $headers['to'];
                               $rejinput['users_id']          = $tkt['_users_id_requester'];
-                              $rejinput['subject']           = $DB->escape($this->cleanSubject($headers['subject']));
+                              $rejinput['subject']           = Sanitizer::sanitize($this->cleanSubject($headers['subject']));
                               $rejinput['messageid']         = $headers['message_id'];
                         }
                     } catch (\Throwable $e) {
@@ -1088,6 +1090,11 @@ class MailCollector extends CommonDBTM
         } catch (\Laminas\Mail\Storage\Exception\InvalidArgumentException $e) {
             $subject = '';
         }
+        $tkt['name'] = $this->cleanSubject($subject);
+        if (!Toolbox::seems_utf8($tkt['name'])) {
+            $tkt['name'] = Toolbox::encodeInUtf8($tkt['name']);
+        }
+
         $tkt['_message']  = $message;
 
         if (!Toolbox::seems_utf8($body)) {
@@ -1190,15 +1197,11 @@ class MailCollector extends CommonDBTM
         if (!$DB->use_utf8mb4) {
            // Replace emojis by their shortcode
             $tkt['content'] = LitEmoji::encodeShortcode($tkt['content']);
+            $tkt['name']    = LitEmoji::encodeShortcode($tkt['name']);
         }
 
        // Clean mail content
         $tkt['content'] = $this->cleanContent($tkt['content']);
-
-        $tkt['name'] = $this->cleanSubject($subject);
-        if (!Toolbox::seems_utf8($tkt['name'])) {
-            $tkt['name'] = Toolbox::encodeInUtf8($tkt['name']);
-        }
 
         if (!isset($tkt['tickets_id'])) {
            // Which entity ?
@@ -1245,7 +1248,6 @@ class MailCollector extends CommonDBTM
         }
 
         $tkt = Sanitizer::sanitize($tkt);
-        $tkt['name']    = LitEmoji::encodeShortcode($tkt['name']);
         return $tkt;
     }
 
@@ -1307,7 +1309,6 @@ class MailCollector extends CommonDBTM
     public function cleanSubject($text)
     {
         $text = str_replace("=20", "\n", $text);
-        $text =  Sanitizer::sanitize($text, false);
         return $text;
     }
 
@@ -1315,13 +1316,14 @@ class MailCollector extends CommonDBTM
    ///return supported encodings in lowercase.
     public function listEncodings()
     {
+        Toolbox::deprecated();
        // Encoding not listed
         static $enc = ['gb2312', 'gb18030'];
 
         if (count($enc) == 2) {
             foreach (mb_list_encodings() as $encoding) {
                 $enc[]   = Toolbox::strtolower($encoding);
-                $aliases = mb_encoding_aliases($encoding);
+                $aliases = @mb_encoding_aliases($encoding);
                 foreach ($aliases as $e) {
                     $enc[] = Toolbox::strtolower($e);
                 }

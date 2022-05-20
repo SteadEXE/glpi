@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,25 +17,26 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
 use Glpi\SocketModel;
 
 // Current version of GLPI
-define('GLPI_VERSION', '10.0.0-rc2');
+define('GLPI_VERSION', '10.0.1');
 define(
     "GLPI_SCHEMA_VERSION",
     GLPI_VERSION . (
@@ -270,7 +272,9 @@ $CFG_GLPI["location_types"]               = ['Budget', 'CartridgeItem', 'Consuma
     'Computer', 'Monitor', "Glpi\\Socket",
     'NetworkEquipment', 'Peripheral', 'Phone',
     'Printer', 'Software', 'SoftwareLicense',
-    'Ticket', 'User', 'Certificate', 'Item_DeviceSimcard'
+    'Ticket', 'User', 'Certificate', 'Item_DeviceSimcard',
+    'Line', 'Appliance', 'PassiveDCEquipment', 'DataCenter',
+    'DCRoom', 'Rack', 'Enclosure', 'PDU'
 ];
 
 $CFG_GLPI["ticket_types"]                 = ['Computer', 'Monitor', 'NetworkEquipment',
@@ -429,7 +433,7 @@ $CFG_GLPI["globalsearch_types"]           = ['Computer', 'Contact', 'Contract',
     'Ticket', 'Problem', 'Change',
     'User', 'Group', 'Project', 'Supplier',
     'Budget', 'Certificate', 'Line', 'Datacenter',
-    'DCRoom', 'Enclosure', 'PDU', 'Rack', 'Cluster',
+    'DCRoom', 'Enclosure', 'PDU', 'Rack', 'Cluster', 'PassiveDCEquipment',
     'Domain', 'Appliance'
 ];
 
@@ -516,7 +520,7 @@ $CFG_GLPI['domain_types']        = ['Computer', 'Monitor', 'NetworkEquipment', '
 ];
 
 $CFG_GLPI['appliance_types']     = ['Computer', 'Monitor', 'NetworkEquipment', 'Peripheral', 'Phone',
-    'Printer', 'Software', 'Appliance', 'Cluster', 'DatabaseInstance'
+    'Printer', 'Software', 'Appliance', 'Cluster', 'DatabaseInstance', 'Database'
 ];
 
 $CFG_GLPI['appliance_relation_types'] = ['Location', 'Network', 'Domain'];
@@ -554,12 +558,12 @@ $CFG_GLPI['javascript'] = [
         'dashboard' => $dashboard_libs,
         'planning'  => ['clipboard', 'fullcalendar', 'tinymce', 'planning'],
         'ticket'    => array_merge(['rateit', 'tinymce', 'kanban'], $dashboard_libs),
-        'problem'   => ['tinymce', 'kanban'],
-        'change'    => ['tinymce', 'kanban'],
+        'problem'   => ['tinymce', 'kanban', 'sortable'],
+        'change'    => ['tinymce', 'kanban', 'sortable'],
         'stat'      => ['charts']
     ],
     'tools'     => [
-        'project'                 => ['gantt', 'kanban', 'tinymce', 'sortable'],
+        'project'                 => ['kanban', 'tinymce', 'sortable'],
         'knowbaseitem'            => ['tinymce'],
         'knowbaseitemtranslation' => ['tinymce'],
         'reminder'                => ['tinymce'],
@@ -622,7 +626,7 @@ $CFG_GLPI["default_impact_asset_types"] = [
     Printer::getType()            => "pics/impact/printer.png",
     Rack::getType()               => "pics/impact/rack.png",
     Software::getType()           => "pics/impact/software.png",
-    DatabaseInstance::getType()           => "pics/impact/database.png",
+    DatabaseInstance::getType()   => "pics/impact/databaseinstance.png",
 ];
 
 /**
@@ -649,4 +653,5 @@ $CFG_GLPI["impact_asset_types"] = $CFG_GLPI["default_impact_asset_types"] + [
     SoftwareLicense::getType()    => "pics/impact/softwarelicense.png",
     Supplier::getType()           => "pics/impact/supplier.png",
     User::getType()               => "pics/impact/user.png",
+    Database::getType()           => "pics/impact/database.png",
 ];

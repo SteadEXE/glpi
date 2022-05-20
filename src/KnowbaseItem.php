@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -396,6 +398,18 @@ class KnowbaseItem extends CommonDBVisible implements ExtraVisibilityCriteria
             $kb_item_item = new KnowbaseItem_Item();
             $kb_item_item->add($params);
         }
+
+        // Handle categories
+        if (isset($this->input['knowbaseitemcategories_id'])) {
+            $kb_cats = is_array($this->input['knowbaseitemcategories_id']) ? $this->input['knowbaseitemcategories_id'] : [$this->input['knowbaseitemcategories_id']];
+            foreach ($kb_cats as $kb_cat) {
+                $kb_cat_item = new KnowbaseItem_KnowbaseItemCategory();
+                $kb_cat_item->add([
+                    'knowbaseitems_id' => $this->getID(),
+                    'knowbaseitemcategories_id' => $kb_cat,
+                ]);
+            }
+        }
     }
 
 
@@ -416,12 +430,6 @@ class KnowbaseItem extends CommonDBVisible implements ExtraVisibilityCriteria
 
        // Profile / entities
         $this->profiles = KnowbaseItem_Profile::getProfiles($this->fields['id']);
-
-       //Linked kb items
-        $this->knowbase_items = KnowbaseItem_Item::getItems($this);
-
-       //Linked kb categories
-        $this->knowbase_categories = KnowbaseItem_KnowbaseItemCategory::getItems($this);
     }
 
 
@@ -821,8 +829,19 @@ class KnowbaseItem extends CommonDBVisible implements ExtraVisibilityCriteria
         $options['formoptions'] = "data-track-changes=true";
         $this->showFormHeader($options);
         echo "<tr class='tab_bg_1'>";
-        echo "<td colspan=2></td>";
+        if ($this->isNewItem()) {
+            echo "<td>" . KnowbaseItemCategory::getTypeName(Session::getPluralNumber()) . "</td>";
+            echo "<td>";
+            KnowbaseItemCategory::dropdown([
+                'value' => [],
+                'multiple' => true,
+            ]);
+            echo "</td>";
+        } else {
+            echo "<td colspan=2></td>";
+        }
         echo "<td>";
+        echo "<input type='hidden' name='users_id' value=\"" . Session::getLoginUserID() . "\">";
         if ($this->fields["date_creation"]) {
            //TRANS: %s is the datetime of insertion
             printf(__('Created on %s'), Html::convDateTime($this->fields["date_creation"]));
@@ -1038,7 +1057,8 @@ class KnowbaseItem extends CommonDBVisible implements ExtraVisibilityCriteria
         $this->updateCounter();
 
         $tmp = [];
-        foreach ($this->knowbase_categories as $category) {
+        $categories = KnowbaseItem_KnowbaseItemCategory::getItems($this);
+        foreach ($categories as $category) {
             $knowbaseitemcategories_id = $category['knowbaseitemcategories_id'];
             $fullcategoryname          = getTreeValueCompleteName(
                 "glpi_knowbaseitemcategories",
@@ -1393,7 +1413,13 @@ class KnowbaseItem extends CommonDBVisible implements ExtraVisibilityCriteria
         }
 
         if ($params['knowbaseitemcategories_id'] > 0) {
-            $criteria['WHERE']['glpi_knowbaseitemcategories.id'] = $params['knowbaseitemcategories_id'];
+            $criteria['LEFT JOIN'][KnowbaseItem_KnowbaseItemCategory::getTable()] = [
+                'FKEY' => [
+                    KnowbaseItem_KnowbaseItemCategory::getTable() => KnowbaseItem::getForeignKeyField(),
+                    KnowbaseItem::getTable() => 'id',
+                ],
+            ];
+            $criteria['WHERE'][KnowbaseItem_KnowbaseItemCategory::getTableField('knowbaseitemcategories_id')] = $params['knowbaseitemcategories_id'];
         }
 
         if (
@@ -1794,7 +1820,7 @@ class KnowbaseItem extends CommonDBVisible implements ExtraVisibilityCriteria
                     echo Search::showItem(
                         $output_type,
                         "<div class='kb'>$toadd <i class='fa fa-fw $fa_class' title='$fa_title'></i> <a $href>" . Html::resume_text($name, 80) . "</a></div>
-                                       <div class='kb_resume'>" . Html::resume_text(RichText::getTextFromHtml($answer, false, false), 600) . "</div>",
+                                       <div class='kb_resume'>" . Html::resume_text(RichText::getTextFromHtml($answer, false, false, true), 600) . "</div>",
                         $item_num,
                         $row_num
                     );
@@ -1831,7 +1857,8 @@ class KnowbaseItem extends CommonDBVisible implements ExtraVisibilityCriteria
                 if ($output_type == Search::HTML_OUTPUT) {
                     $tmp = [];
                     $ki->getFromDB($data["id"]);
-                    foreach ($ki->knowbase_categories as $category) {
+                    $categories = KnowbaseItem_KnowbaseItemCategory::getItems($ki);
+                    foreach ($categories as $category) {
                         $knowbaseitemcategories_id = $category['knowbaseitemcategories_id'];
                         $fullcategoryname          = getTreeValueCompleteName(
                             "glpi_knowbaseitemcategories",

@@ -2,13 +2,14 @@
 
 /**
  * ---------------------------------------------------------------------
+ *
  * GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2015-2022 Teclib' and contributors.
  *
  * http://glpi-project.org
  *
- * based on GLPI - Gestionnaire Libre de Parc Informatique
- * Copyright (C) 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
  *
@@ -16,18 +17,19 @@
  *
  * This file is part of GLPI.
  *
- * GLPI is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * GLPI is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GLPI. If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ---------------------------------------------------------------------
  */
 
@@ -85,6 +87,13 @@ class Plugin extends CommonDBTM
      * @var int The plugin's files are for a newer version than installed. An update is needed.
      */
     const NOTUPDATED     = 6;
+
+    /**
+     * Option used to indicates that auto installation of plugin should be disabled (bool value expected).
+     *
+     * @var string
+     */
+    const OPTION_AUTOINSTALL_DISABLED = 'autoinstall_disabled';
 
     public static $rightname = 'config';
 
@@ -255,10 +264,14 @@ class Plugin extends CommonDBTM
                 continue;
             }
 
-            if (file_exists("$base_dir/$plugin_key/setup.php")) {
+            $plugin_directory = "$base_dir/$plugin_key";
+
+            if (!file_exists($plugin_directory)) {
+                continue;
+            }
+
+            if ((new self())->loadPluginSetupFile($plugin_key)) {
                 $loaded = true;
-                $plugin_directory = "$base_dir/$plugin_key";
-                include_once("$plugin_directory/setup.php");
                 if (!in_array($plugin_key, self::$loaded_plugins)) {
                     // Register PSR-4 autoloader
                     $psr4_dir = $plugin_directory . '/src';
@@ -345,11 +358,15 @@ class Plugin extends CommonDBTM
                 continue;
             }
             $locales_dir = "$base_dir/$plugin_key/locales/";
-            if (file_exists($locales_dir . $CFG_GLPI["languages"][$trytoload][1])) {
+            if (
+                array_key_exists($trytoload, $CFG_GLPI["languages"])
+                && file_exists($locales_dir . $CFG_GLPI["languages"][$trytoload][1])
+            ) {
                 $mofile = $locales_dir . $CFG_GLPI["languages"][$trytoload][1];
             } else if (
                 !empty($CFG_GLPI["language"])
-                    && file_exists($locales_dir . $CFG_GLPI["languages"][$CFG_GLPI["language"]][1])
+                && array_key_exists($CFG_GLPI["language"], $CFG_GLPI["languages"])
+                && file_exists($locales_dir . $CFG_GLPI["languages"][$CFG_GLPI["language"]][1])
             ) {
                 $mofile = $locales_dir . $CFG_GLPI["languages"][$CFG_GLPI["language"]][1];
             } else if (file_exists($locales_dir . "en_GB.mo")) {
@@ -716,7 +733,7 @@ class Plugin extends CommonDBTM
                 'state'   => self::NOTINSTALLED,
             ]);
             $this->unload($this->fields['directory']);
-            self::doHook('post_plugin_uninstall', $this->fields['directory']);
+            self::doHook(Hooks::POST_PLUGIN_UNINSTALL, $this->fields['directory']);
 
             $type = INFO;
             $message = sprintf(__('Plugin %1$s has been uninstalled!'), $this->fields['name']);
@@ -786,7 +803,7 @@ class Plugin extends CommonDBTM
                         ]);
                         $message = sprintf(__('Plugin %1$s has been installed and must be configured!'), $this->fields['name']);
                     }
-                    self::doHook('post_plugin_install', $this->fields['directory']);
+                    self::doHook(Hooks::POST_PLUGIN_UNINSTALL, $this->fields['directory']);
                 }
             } else {
                 $type = WARNING;
@@ -879,7 +896,7 @@ class Plugin extends CommonDBTM
                 if (isset($_SESSION['glpimenu'])) {
                     unset($_SESSION['glpimenu']);
                 }
-                self::doHook('post_plugin_enable', $this->fields['directory']);
+                self::doHook(Hooks::POST_PLUGIN_ENABLE, $this->fields['directory']);
 
                 Session::addMessageAfterRedirect(
                     sprintf(__('Plugin %1$s has been activated!'), $this->fields['name']),
@@ -925,7 +942,7 @@ class Plugin extends CommonDBTM
                 'state' => self::NOTACTIVATED
             ]);
             $this->unload($this->fields['directory']);
-            self::doHook('post_plugin_disable', $this->fields['directory']);
+            self::doHook(Hooks::POST_PLUGIN_DISABLE, $this->fields['directory']);
 
            // reset menu
             if (isset($_SESSION['glpimenu'])) {
@@ -971,7 +988,7 @@ class Plugin extends CommonDBTM
 
         $dirs = array_keys(self::$activated_plugins);
         foreach ($dirs as $dir) {
-            self::doHook('post_plugin_disable', $dir);
+            self::doHook(Hooks::POST_PLUGIN_DISABLE, $dir);
         }
 
         self::$activated_plugins = [];
@@ -997,7 +1014,7 @@ class Plugin extends CommonDBTM
             CronTask::Unregister($this->fields['directory']);
 
             $this->unload($this->fields['directory']);
-            self::doHook('post_plugin_clean', $this->fields['directory']);
+            self::doHook(Hooks::POST_PLUGIN_CLEAN, $this->fields['directory']);
             $this->delete(['id' => $ID]);
         }
     }
@@ -1570,6 +1587,18 @@ class Plugin extends CommonDBTM
     }
 
     /**
+     * Get plugin files version.
+     *
+     * @param string $key
+     *
+     * @return string|null
+     */
+    public static function getPluginFilesVersion(string $key): ?string
+    {
+        return (new self())->getInformationsFromDirectory($key)['version'] ?? null;
+    }
+
+    /**
      * Returns plugin information from directory.
      *
      * @param string $directory
@@ -1578,34 +1607,90 @@ class Plugin extends CommonDBTM
      */
     public function getInformationsFromDirectory($directory)
     {
+        if (!$this->loadPluginSetupFile($directory)) {
+            return [];
+        }
 
-        $informations = [];
+        self::loadLang($directory);
+        return Toolbox::addslashes_deep(self::getInfo($directory));
+    }
+
+    /**
+     * Returns plugin options.
+     *
+     * @param string $plugin_key
+     *
+     * @return array
+     */
+    public function getPluginOptions(string $plugin_key): array
+    {
+        if (!$this->loadPluginSetupFile($plugin_key)) {
+            return [];
+        }
+
+        $options_callable = sprintf('plugin_%s_options', $plugin_key);
+        if (!function_exists($options_callable)) {
+            return [];
+        }
+
+        $options = $options_callable();
+        if (!is_array($options)) {
+            trigger_error(
+                sprintf('Invalid "options" key provided by plugin `plugin_%s_options()` method.', $plugin_key),
+                E_USER_WARNING
+            );
+            return [];
+        }
+
+        return $options;
+    }
+
+    /**
+     * Returns plugin option.
+     *
+     * @param string $plugin_key
+     * @param string $option_key
+     * @param mixed  $default_value
+     *
+     * @return array
+     */
+    public function getPluginOption(string $plugin_key, string $option_key, $default_value = null)//: mixed
+    {
+        $options = $this->getPluginOptions($plugin_key);
+        return array_key_exists($option_key, $options)
+            ? $options[$option_key]
+            : $default_value;
+    }
+
+    /**
+     * Load plugin setup file.
+     *
+     * @param string $plugin_key
+     *
+     * @return bool
+     */
+    private function loadPluginSetupFile(string $plugin_key): bool
+    {
         foreach (PLUGINS_DIRECTORIES as $base_dir) {
             if (!is_dir($base_dir)) {
                 continue;
             }
-            $setup_file  = "$base_dir/$directory/setup.php";
+            $file_path = sprintf('%s/%s/setup.php', $base_dir, $plugin_key);
 
-            if (file_exists($setup_file)) {
-               // Includes are made inside a function to prevent included files to override
-               // variables used in this function.
-               // For example, if the included files contains a $plugin variable, it will
-               // replace the $plugin variable used here.
-                $include_fct = function () use ($directory, $setup_file) {
-                    self::loadLang($directory);
-                    include_once($setup_file);
+            if (file_exists($file_path)) {
+                // Includes are made inside a function to prevent included files to override
+                // variables used in this function.
+                // For example, if the included files contains a $key variable, it will
+                // replace the $key variable used here.
+                $include_fct = function () use ($plugin_key, $file_path) {
+                    include_once($file_path);
                 };
                 $include_fct();
-                $informations = Toolbox::addslashes_deep(self::getInfo($directory));
-
-               // plugin found, don't parse others directories
-                break;
+                return true;
             }
         }
-
-        return $informations;
+        return false;
     }
-
 
     /**
      * Get database relations for plugins
@@ -2512,6 +2597,10 @@ class Plugin extends CommonDBTM
             }
         }
 
+        if ($directory === false) {
+            return false;
+        }
+
         if (!$full) {
             $directory = str_replace(GLPI_ROOT, "", $directory);
         }
@@ -2536,6 +2625,11 @@ class Plugin extends CommonDBTM
         global $CFG_GLPI;
 
         $directory = self::getPhpDir($plugin_key, false);
+
+        if ($directory === false) {
+            return false;
+        }
+
         $directory = ltrim($directory, '/\\');
 
         if ($full) {
