@@ -485,7 +485,7 @@ class Inventory extends InventoryTestCase
                     'is_dynamic' => 1,
                     'entities_id' => 0,
                     'is_recursive' => 0,
-                    'serial' => null,
+                    'serial' => 'xyz',
                     'busID' => null,
                     'otherserial' => null,
                     'locations_id' => 0,
@@ -1095,7 +1095,7 @@ class Inventory extends InventoryTestCase
             ->string['tag']->isIdenticalTo('000005');
         $this->array($metadata['provider'])->hasSize(10);
 
-       //check created agent
+        //check created agent
         $agenttype = $DB->request(['FROM' => \AgentType::getTable(), 'WHERE' => ['name' => 'Core']])->current();
         $agents = $DB->request(['FROM' => \Agent::getTable()]);
         $this->integer(count($agents))->isIdenticalTo(1);

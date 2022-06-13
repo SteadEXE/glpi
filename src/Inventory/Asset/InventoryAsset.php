@@ -62,11 +62,13 @@ abstract class InventoryAsset
     protected $entities_id = 0;
     /** @var array */
     protected $ruleentity_data = [];
+    /** @var array */
+    protected $rulelocation_data = [];
     /** @var boolean */
     protected $links_handled = false;
     /** @var boolean */
     protected $with_history = true;
-    /** @var InventoryAsset */
+    /** @var MainAsset */
     protected $main_asset;
     /** @var string */
     protected $request_query;

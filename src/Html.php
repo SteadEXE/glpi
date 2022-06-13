@@ -2001,7 +2001,7 @@ HTML;
         string $option = "",
         bool $add_id = true
     ) {
-        global $HEADER_LOADED;
+        global $HEADER_LOADED, $CFG_GLPI;
 
         // Print a nice HTML-head for help page
         if ($HEADER_LOADED) {
@@ -2226,17 +2226,22 @@ HTML;
     {
         global $CFG_GLPI;
 
-        Toolbox::deprecated('openArrowMassives() method is deprecated');
+        //Toolbox::deprecated('openArrowMassives() method is deprecated');
 
         if ($fixed) {
-            echo "<table class='tab_glpi' width='950px'>";
+            echo "<table width='950px'>";
         } else {
-            echo "<table class='tab_glpi' width='80%'>";
+            echo "<table width='80%'>";
+        }
+
+        $arrow = "fas fa-level-down-alt";
+        if (!$ontop) {
+            $arrow = "fas fa-level-up-alt";
         }
 
         echo "<tr>";
         if (!$onright) {
-            echo "<td><i class='fas fa-level-down-alt fa-flip-horizontal fa-lg mx-2'></i></td>";
+            echo "<td><i class='$arrow fa-flip-horizontal fa-lg mx-2'></i></td>";
         } else {
             echo "<td class='left' width='80%'></td>";
         }
@@ -2249,7 +2254,7 @@ HTML;
              href='#'>" . __('Uncheck all') . "</a></td>";
 
         if ($onright) {
-            echo "<td><i class='fas fa-level-down-alt fa-lg mx-2'></i>";
+            echo "<td><i class='$arrow fa-lg mx-2'></i>";
         } else {
             echo "<td class='left' width='80%'>";
         }
@@ -2267,7 +2272,7 @@ HTML;
     public static function closeArrowMassives($actions, $confirm = [])
     {
 
-        Toolbox::deprecated('closeArrowMassives() method is deprecated');
+        //Toolbox::deprecated('closeArrowMassives() method is deprecated');
 
         if (count($actions)) {
             foreach ($actions as $name => $label) {
@@ -2305,7 +2310,7 @@ HTML;
         $out  = "<input title='" . __s('Check all as') . "' type='checkbox' class='form-check-input'
                       title='" . __s('Check all as') . "'
                       name='_checkall_$rand' id='checkall_$rand'
-                      onclick= \"if ( checkAsCheckboxes('checkall_$rand', '$container_id')) {return true;}\">";
+                      onclick= \"if ( checkAsCheckboxes(this, '$container_id')) {return true;}\">";
 
        // permit to shift select checkboxes
         $out .= Html::scriptBlock("\$(function() {\$('#$container_id input[type=\"checkbox\"]').shiftSelectable();});");
@@ -3788,13 +3793,13 @@ JS;
         Html::requireJs('tinymce');
 
         $language = $_SESSION['glpilanguage'];
-        if (!file_exists(GLPI_ROOT . "/public/lib/tinymce-i18n/langs5/$language.js")) {
+        if (!file_exists(GLPI_ROOT . "/public/lib/tinymce-i18n/langs6/$language.js")) {
             $language = $CFG_GLPI["languages"][$_SESSION['glpilanguage']][2];
-            if (!file_exists(GLPI_ROOT . "/public/lib/tinymce-i18n/langs5/$language.js")) {
+            if (!file_exists(GLPI_ROOT . "/public/lib/tinymce-i18n/langs6/$language.js")) {
                 $language = "en_GB";
             }
         }
-        $language_url = $CFG_GLPI['root_doc'] . '/public/lib/tinymce-i18n/langs5/' . $language . '.js';
+        $language_url = $CFG_GLPI['root_doc'] . '/public/lib/tinymce-i18n/langs6/' . $language . '.js';
 
        // Apply all GLPI styles to editor content
         $content_css = preg_replace('/^.*href="([^"]+)".*$/', '$1', self::scss('css/palettes/' . $_SESSION['glpipalette'] ?? 'auror'))

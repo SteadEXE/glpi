@@ -1570,15 +1570,12 @@ class Session
      *
      * @since  9.2.2
      *
-     * @return false or [helpdesk|central]
+     * @return string|false Returns "helpdesk" or "central" if there is a session and the interface property is set.
+     *                      Returns false if there is no session or the interface property is not set.
      */
     public static function getCurrentInterface()
     {
-        if (isset($_SESSION['glpiactiveprofile']['interface'])) {
-            return $_SESSION['glpiactiveprofile']['interface'];
-        }
-
-        return false;
+        return $_SESSION['glpiactiveprofile']['interface'] ?? false;
     }
 
     /**
@@ -1588,20 +1585,36 @@ class Session
      *
      * @return boolean
      */
-    public static function canImpersonate($user_id)
+    public static function canImpersonate($user_id, ?string &$message = null)
     {
 
         if (
             $user_id <= 0 || self::getLoginUserID() == $user_id
             || (self::isImpersonateActive() && self::getImpersonatorId() == $user_id)
         ) {
+            $message = __("You can't impersonate yourself.");
             return false; // Cannot impersonate invalid user, self, or already impersonated user
         }
 
-       // For now we do not check more than config update right, but we may
-       // implement more fine checks in the future.
+        // Cannot impersonate if we don't have config right
+        if (!self::haveRight(Config::$rightname, UPDATE)) {
+            return false;
+        }
 
-        return self::haveRight(Config::$rightname, UPDATE);
+        // Cannot impersonate inactive user
+        $user = new User();
+        if (!$user->getFromDB($user_id) || !$user->getField('is_active')) {
+            $message = __("The user is not active.");
+            return false;
+        }
+
+        // Cannot impersonate user with no profile
+        if (Profile_User::getUserProfiles($user_id) == []) {
+            $message = __("The user doesn't have any profile.");
+            return false;
+        }
+
+        return true;
     }
 
     /**

@@ -36,14 +36,11 @@
 use Glpi\SocketModel;
 
 // Current version of GLPI
-define('GLPI_VERSION', '10.0.1');
+define('GLPI_VERSION', '10.0.2');
+$schema_file = sprintf('%s/install/mysql/glpi-%s-empty.sql', GLPI_ROOT, GLPI_VERSION);
 define(
     "GLPI_SCHEMA_VERSION",
-    GLPI_VERSION . (
-        is_readable(GLPI_ROOT . '/install/mysql/glpi-empty.sql')
-        ? '@' . sha1_file(GLPI_ROOT . '/install/mysql/glpi-empty.sql')
-        : ''
-    )
+    GLPI_VERSION . (is_readable($schema_file) ? '@' . sha1_file($schema_file) : '')
 );
 
 if (!defined('GLPI_MARKETPLACE_PRERELEASES')) {
@@ -84,6 +81,7 @@ $CFG_GLPI['languages'] = [
     'en_GB'  => ['English',                   'en_GB.mo',    'en-GB', 'en', 'english',              2],
     'en_US'  => ['English (US)',              'en_US.mo',    'en-GB', 'en', 'english',              2],
     'es_AR'  => ['Español (Argentina)',       'es_AR.mo',    'es',    'es', 'spanish',              2],
+    'es_EC'  => ['Español (Ecuador)',         'es_EC.mo',    'es',    'es', 'spanish',              2],
     'es_CO'  => ['Español (Colombia)',        'es_CO.mo',    'es',    'es', 'spanish',              2],
     'es_ES'  => ['Español (España)',          'es_ES.mo',    'es',    'es', 'spanish',              2],
     'es_419' => ['Español (América Latina)',  'es_419.mo',   'es',    'es', 'spanish',              2],
@@ -402,8 +400,10 @@ $CFG_GLPI["systeminformations_types"]     = ['AuthLDAP', 'DBConnection', 'MailCo
     'Plugin'
 ];
 
-$CFG_GLPI["rulecollections_types"]        = ['RuleImportAssetCollection',
+$CFG_GLPI["rulecollections_types"]        = [
+    'RuleImportAssetCollection',
     'RuleImportEntityCollection',
+    'RuleLocationCollection',
     'RuleMailCollectorCollection',
     'RuleRightCollection',
     'RuleSoftwareCategoryCollection',

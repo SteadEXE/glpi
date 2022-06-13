@@ -161,6 +161,8 @@ abstract class CommonITILObject extends CommonDBTM
         $actors = [];
 
         $actortypestring = self::getActorFieldNameType($actortype);
+        $entities_id = $params['entities_id'] ?? $_SESSION['glpiactive_entity'];
+        $default_use_notif = Entity::getUsedConfig('is_notif_enable_default', $entities_id, '', 1);
 
         if ($this->isNewItem()) {
             // load default user from preference only at the first load of new ticket form
@@ -183,7 +185,7 @@ abstract class CommonITILObject extends CommonDBTM
                             'itemtype'          => 'User',
                             'text'              => $name,
                             'title'             => $name,
-                            'use_notification'  => strlen($email) > 0,
+                            'use_notification'  => $email === '' ? false : $default_use_notif,
                             'alternative_email' => $email,
                         ];
                     }
@@ -210,7 +212,7 @@ abstract class CommonITILObject extends CommonDBTM
                             'itemtype'          => 'User',
                             'text'              => $name,
                             'title'             => $name,
-                            'use_notification'  => strlen($email) > 0,
+                            'use_notification'  => $email === '' ? false : $default_use_notif,
                             'alternative_email' => $email,
                         ];
                     }
@@ -238,7 +240,7 @@ abstract class CommonITILObject extends CommonDBTM
                             'itemtype'          => 'Supplier',
                             'text'              => $supplier_obj->fields['name'],
                             'title'             => $supplier_obj->fields['name'],
-                            'use_notification'  => strlen($supplier_obj->fields['email']) > 0,
+                            'use_notification'  => $supplier_obj->fields['email'] === '' ? false : $default_use_notif,
                             'alternative_email' => $supplier_obj->fields['email'],
                         ];
                     }
@@ -5044,7 +5046,7 @@ abstract class CommonITILObject extends CommonDBTM
             $toupdate[] = [
                 'value_fieldname' => 'value',
                 'to_update'       => "countassign_$rand",
-                'url'             => $CFG_GLPI["root_doc"] . "/ajax/ticketassigninformation.php",
+                'url'             => $CFG_GLPI["root_doc"] . "/ajax/actorinformation.php",
                 'moreparams'      => ['users_id_assign' => '__VALUE__']
             ];
             $params['toupdate'] = $toupdate;
@@ -5099,7 +5101,7 @@ abstract class CommonITILObject extends CommonDBTM
                 echo "$(function() {";
                 Ajax::updateItemJsCode(
                     "countassign_$rand",
-                    $CFG_GLPI["root_doc"] . "/ajax/ticketassigninformation.php",
+                    $CFG_GLPI["root_doc"] . "/ajax/actorinformation.php",
                     ['users_id_assign' => '__VALUE__'],
                     "dropdown__users_id_" . $typename . $rand
                 );
@@ -8557,6 +8559,10 @@ abstract class CommonITILObject extends CommonDBTM
      */
     protected function assign(array $input)
     {
+        if (!in_array(self::ASSIGNED, array_keys($this->getAllStatusArray()))) {
+            return $input;
+        }
+
         if (
             (
                 (

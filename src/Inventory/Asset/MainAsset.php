@@ -43,9 +43,10 @@ use Glpi\Inventory\Conf;
 use Glpi\Inventory\Request;
 use RefusedEquipment;
 use RuleImportAssetCollection;
-use RuleImportEntity;
 use RuleImportEntityCollection;
+use RuleLocationCollection;
 use RuleMatchedLog;
+use stdClass;
 use Toolbox;
 use Transfer;
 
@@ -323,7 +324,7 @@ abstract class MainAsset extends InventoryAsset
                 $cnt++;
             }
             if (empty($val->contact)) {
-                $val->contact = $user_temp;
+                $val->contact = $user_temp ?? '';
             }
         }
     }
@@ -527,6 +528,14 @@ abstract class MainAsset extends InventoryAsset
                         $this->ruleentity_data[$action_key] = $dataEntity[$action_key];
                     }
                 }
+
+                $ruleLocation = new RuleLocationCollection();
+                $ruleLocation->getCollectionPart();
+                $dataLocation = $ruleLocation->processAllRules($input, []);
+
+                if (isset($dataLocation['locations_id']) && $dataLocation['locations_id'] != -1) {
+                    $this->rulelocation_data['locations_id'] = $dataLocation['locations_id'];
+                }
             }
 
             //call rules on current collected data to find item
@@ -614,6 +623,10 @@ abstract class MainAsset extends InventoryAsset
         foreach ($this->ruleentity_data as $attribute => $value) {
             $val->{$attribute} = $value;
         }
+        // append data from RuleLocation
+        foreach ($this->rulelocation_data as $attribute => $value) {
+            $val->{$attribute} = $value;
+        }
 
         $orig_glpiactive_entity = $_SESSION['glpiactive_entity'] ?? null;
         $orig_glpiactiveentities = $_SESSION['glpiactiveentities'] ?? null;
@@ -692,7 +705,6 @@ abstract class MainAsset extends InventoryAsset
                 $fw = new Firmware($this->item, [$val->firmware]);
                 if ($fw->checkConf($this->conf)) {
                     $fw->setAgent($this->getAgent());
-                    $fw->setEntityID($this->getEntityID());
                     $fw->prepare();
                     $fw->handleLinks();
                     $this->assets['Glpi\Inventory\Asset\Firmware'] = [$fw];
@@ -700,7 +712,7 @@ abstract class MainAsset extends InventoryAsset
                 }
             }
 
-            if (property_exists($val, 'ap_port')) {
+            if (property_exists($val, 'ap_port') && method_exists($this, 'setManagementPorts')) {
                 $this->setManagementPorts(['management' => $val->ap_port]);
                 unset($val->ap_port);
             }
@@ -777,8 +789,8 @@ abstract class MainAsset extends InventoryAsset
         $controllers = [];
         $ignored_controllers = [];
 
-       //ensure controllers are done last, some components will
-       //ask to ignore their associated controller
+        //ensure controllers are done last, some components will
+        //ask to ignore their associated controller
         if (isset($assets_list['\Glpi\Inventory\Asset\Controller'])) {
             $controllers = $assets_list['\Glpi\Inventory\Asset\Controller'];
             unset($assets_list['\Glpi\Inventory\Asset\Controller']);
@@ -786,6 +798,7 @@ abstract class MainAsset extends InventoryAsset
 
         foreach ($assets_list as $assets) {
             foreach ($assets as $asset) {
+                $asset->setEntityID($this->getEntityID());
                 $asset->setExtraData($this->assets);
                 $asset->setExtraData(['\\' . get_class($this) => $mainasset]);
                 $asset->handleLinks();
@@ -794,11 +807,12 @@ abstract class MainAsset extends InventoryAsset
             }
         }
 
-       //do controllers
+        //do controllers
         foreach ($controllers as $asset) {
+            $asset->setEntityID($this->getEntityID());
             $asset->setExtraData($this->assets);
             $asset->setExtraData(['\\' . get_class($this) => $mainasset]);
-           //do not handle ignored controllers
+            //do not handle ignored controllers
             $asset->setExtraData(['ignored' => $ignored_controllers]);
             $asset->handleLinks();
             $asset->handle();

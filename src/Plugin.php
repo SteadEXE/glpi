@@ -873,6 +873,11 @@ class Plugin extends CommonDBTM
 
             $function = 'plugin_' . $this->fields['directory'] . '_check_config';
             if (!function_exists($function) || $function()) {
+                $activate_function = 'plugin_' . $this->fields['directory'] . '_activate';
+                if (function_exists($activate_function)) {
+                    $activate_function();
+                }
+
                 $this->update(['id'    => $ID,
                     'state' => self::ACTIVATED
                 ]);
@@ -937,6 +942,11 @@ class Plugin extends CommonDBTM
     {
 
         if ($this->getFromDB($ID)) {
+            $deactivate_function = 'plugin_' . $this->fields['directory'] . '_deactivate';
+            if (function_exists($deactivate_function)) {
+                $deactivate_function();
+            }
+
             $this->update([
                 'id'    => $ID,
                 'state' => self::NOTACTIVATED
@@ -1319,14 +1329,18 @@ class Plugin extends CommonDBTM
         foreach ($pluglist as $plugin) {
             $name = Toolbox::stripTags($plugin['name']);
             $version = Toolbox::stripTags($plugin['version']);
+            $state = $plug->isLoadable($plugin['directory']) ? $plugin['state'] : self::TOBECLEANED;
+            $state = self::getState($state);
+            $is_marketplace = file_exists(GLPI_MARKETPLACE_DIR . "/" . $plugin['directory']);
+            $install_method = $is_marketplace ? "Marketplace" : "Manual";
 
             $msg  = substr(str_pad($plugin['directory'], 30), 0, 20) .
                  " Name: " . Toolbox::substr(str_pad($name, 40), 0, 30) .
                  " Version: " . str_pad($version, 10) .
-                 " State: ";
+                 " State: " . str_pad($state, 40) .
+                 " Install Method: " . $install_method;
 
-            $state = $plug->isLoadable($plugin['directory']) ? $plugin['state'] : self::TOBECLEANED;
-            $msg .= self::getState($state);
+
 
             echo wordwrap("\t" . $msg . "\n", $width, "\n\t\t");
         }
