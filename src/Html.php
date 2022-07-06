@@ -609,8 +609,22 @@ class Html
      *
      * @return void
      **/
-    public static function displayRightError()
+    public static function displayRightError(string $additional_info = '')
     {
+        $requested_url = (isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : 'Unknown');
+        $user_id = Session::getLoginUserID() ?? 'Anonymous';
+        if (empty($additional_info)) {
+            $additional_info = __('No additional information given');
+        }
+        $internal_message = "User ID: $user_id tried to access or perform an action on $requested_url with insufficient rights. Additional information: $additional_info\n";
+        $internal_message .= "\tStack Trace:\n";
+        $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+        $trace_string = '';
+        foreach ($backtrace as $frame) {
+            $trace_string .= "\t\t" . $frame['file'] . ':' . $frame['line'] . ' ' . $frame['function'] . '()' . "\n";
+        }
+        $internal_message .= $trace_string;
+        Toolbox::logInFile('access-errors', $internal_message);
         self::displayErrorAndDie(__("You don't have permission to perform this action."));
     }
 
@@ -2505,10 +2519,12 @@ HTML;
             $options['specific_tags']['data-glpicore-ma-tags'] = 'common';
         }
 
-       // encode quotes and brackets to prevent maformed name attribute
-        $id = htmlspecialchars($id, ENT_QUOTES);
-        $id = str_replace(['[', ']'], ['&amp;#91;', '&amp;#93;'], $id);
-        $options['name']          = "item[$itemtype][" . $id . "]";
+        if (empty($options['name'])) {
+            // encode quotes and brackets to prevent maformed name attribute
+            $id = htmlspecialchars($id, ENT_QUOTES);
+            $id = str_replace(['[', ']'], ['&amp;#91;', '&amp;#93;'], $id);
+            $options['name'] = "item[$itemtype][" . $id . "]";
+        }
 
         $options['zero_on_empty'] = false;
 
@@ -2696,7 +2712,7 @@ HTML;
                         $js_modal_fields .= '#' . $p['container'] . ' ';
                     }
                     $js_modal_fields .= "[data-glpicore-ma-tags~=" . $p['tag_to_send'] . "]').each(function( index ) {
-                  fields[$(this).attr('name')] = $(this).attr('value');
+                  fields[$(this).attr('name')] = $(this).val();
                   if (($(this).attr('type') == 'checkbox') && (!$(this).is(':checked'))) {
                      fields[$(this).attr('name')] = 0;
                   }
@@ -3802,8 +3818,8 @@ JS;
         $language_url = $CFG_GLPI['root_doc'] . '/public/lib/tinymce-i18n/langs6/' . $language . '.js';
 
        // Apply all GLPI styles to editor content
-        $content_css = preg_replace('/^.*href="([^"]+)".*$/', '$1', self::scss('css/palettes/' . $_SESSION['glpipalette'] ?? 'auror'))
-         . ',' . preg_replace('/^.*href="([^"]+)".*$/', '$1', self::css('public/lib/base.css'));
+        $content_css = preg_replace('/^.*href="([^"]+)".*$/', '$1', self::scss(('css/palettes/' . $_SESSION['glpipalette'] ?? 'auror') . '.scss', ['force_no_version' => true]))
+         . ',' . preg_replace('/^.*href="([^"]+)".*$/', '$1', self::css('public/lib/base.css', ['force_no_version' => true]));
 
         $cache_suffix = '?v=' . FrontEnd::getVersionCacheKey(GLPI_VERSION);
         $readonlyjs   = $readonly ? 'true' : 'false';
@@ -5448,13 +5464,15 @@ HTML;
             $options['media'] = 'all';
         }
 
-        $version = GLPI_VERSION;
-        if (isset($options['version'])) {
-            $version = $options['version'];
-            unset($options['version']);
-        }
+        if (!isset($options['force_no_version']) || !$options['force_no_version']) {
+            $version = GLPI_VERSION;
+            if (isset($options['version'])) {
+                $version = $options['version'];
+                unset($options['version']);
+            }
 
-        $url .= ((strpos($url, '?') !== false) ? '&' : '?') . 'v=' . FrontEnd::getVersionCacheKey($version);
+            $url .= ((strpos($url, '?') !== false) ? '&' : '?') . 'v=' . FrontEnd::getVersionCacheKey($version);
+        }
 
         return sprintf(
             '<link rel="stylesheet" type="text/css" href="%s" %s>',

@@ -37,6 +37,7 @@ use Glpi\Console\Application;
 use Glpi\Event;
 use Glpi\Mail\Protocol\ProtocolInterface;
 use Glpi\Toolbox\Sanitizer;
+use Glpi\Toolbox\VersionParser;
 use Laminas\Mail\Storage\AbstractStorage;
 use Mexitek\PHPColors\Color;
 use Monolog\Logger;
@@ -2255,7 +2256,8 @@ class Toolbox
        // Set global $DB as it is used in "Config::setConfigurationValues()" just after schema creation
         $DB = $database;
 
-        if (!$DB->runFile(sprintf('%s/install/mysql/glpi-%s-empty.sql', GLPI_ROOT, GLPI_VERSION))) {
+        $normalized_nersion = VersionParser::getNormalizedVersion(GLPI_VERSION, false);
+        if (!$DB->runFile(sprintf('%s/install/mysql/glpi-%s-empty.sql', GLPI_ROOT, $normalized_nersion))) {
             echo "Errors occurred inserting default database";
         } else {
            //dataset
@@ -2600,6 +2602,15 @@ class Toolbox
         if (count($doc_data)) {
             $base_path = $CFG_GLPI['root_doc'];
 
+            $was_html_encoded = Sanitizer::isHtmlEncoded($content_text);
+            $was_escaped      = Sanitizer::isDbEscaped($content_text);
+            if ($was_html_encoded) {
+                $content_text = Sanitizer::decodeHtmlSpecialChars($content_text);
+            }
+            if ($was_escaped) {
+                $content_text = Sanitizer::dbUnescape($content_text);
+            }
+
             foreach ($doc_data as $id => $image) {
                 if (isset($image['tag'])) {
                    // Add only image files : try to detect mime type
@@ -2626,13 +2637,13 @@ class Toolbox
                       // 1 - Replace direct tag (with prefix and suffix) by the image
                         $content_text = preg_replace(
                             '/' . Document::getImageTag($image['tag']) . '/',
-                            Sanitizer::encodeHtmlSpecialChars($img),
+                            $img,
                             $content_text
                         );
 
                          // 2 - Replace img with tag in id attribute by the image
                         $regex = '/<img[^>]+' . preg_quote($image['tag'], '/') . '[^<]+>/im';
-                        preg_match_all($regex, Sanitizer::unsanitize($content_text), $matches);
+                        preg_match_all($regex, $content_text, $matches);
                         foreach ($matches[0] as $match_img) {
                             //retrieve dimensions
                             $width = $height = null;
@@ -2666,9 +2677,9 @@ class Toolbox
                             $content_text = str_replace(
                                 $match_img,
                                 $new_image,
-                                Sanitizer::unsanitize($content_text)
+                                $content_text
                             );
-                            $content_text = Sanitizer::encodeHtmlSpecialChars($content_text);
+                            $content_text = $content_text;
                         }
 
                         // If the tag is from another ticket : link document to ticket
@@ -2695,6 +2706,13 @@ class Toolbox
                         );
                     }
                 }
+            }
+
+            if ($was_html_encoded) {
+                $content_text = Sanitizer::encodeHtmlSpecialChars($content_text);
+            }
+            if ($was_escaped) {
+                $content_text = Sanitizer::dbEscape($content_text);
             }
         }
 
@@ -2740,18 +2758,85 @@ class Toolbox
             return $encoded;
         }
 
-        $json = json_decode($encoded, $assoc);
-
-        if (json_last_error() != JSON_ERROR_NONE) {
-           //something went wrong... Try to unsanitize before decoding.
-            $json = json_decode(Sanitizer::unsanitize($encoded), $assoc);
-            if (json_last_error() != JSON_ERROR_NONE) {
-                self::log(null, Logger::NOTICE, ['Unable to decode JSON string! Is this really JSON?']);
-                return $encoded;
+        $json_data = null;
+        if (self::isJSON($encoded)) {
+            $json_data = $encoded;
+        } else {
+            //something went wrong... Try to unsanitize before decoding.
+            $raw_encoded = Sanitizer::unsanitize($encoded);
+            if (self::isJSON($raw_encoded)) {
+                $json_data = $raw_encoded;
             }
         }
 
+        if ($json_data === null) {
+            self::log(null, Logger::NOTICE, ['Unable to decode JSON string! Is this really JSON?']);
+            return $encoded;
+        }
+
+        $json = json_decode($json_data, $assoc);
         return $json;
+    }
+
+
+    /**
+     * **Fast** JSON detection of a given var
+     * From https://stackoverflow.com/a/45241792
+     *
+     * @param mixed the var to test
+     *
+     * @return bool
+     */
+    public static function isJSON($json): bool
+    {
+        // Numeric strings are always valid JSON.
+        if (is_numeric($json)) {
+            return true;
+        }
+
+        // A non-string value can never be a JSON string.
+        if (!is_string($json)) {
+            return false;
+        }
+
+        $json = trim($json);
+        // Any non-numeric JSON string must be longer than 2 characters.
+        if (strlen($json) < 2) {
+            return false;
+        }
+
+        // "null" is valid JSON string.
+        if ('null' === $json) {
+            return true;
+        }
+
+        // "true" and "false" are valid JSON strings.
+        if ('true' === $json) {
+            return true;
+        }
+        if ('false' === $json) {
+            return false;
+        }
+
+        // Any other JSON string has to be wrapped in {}, [] or "".
+        if ('{' != $json[0] && '[' != $json[0] && '"' != $json[0]) {
+            return false;
+        }
+
+        // Verify that the trailing character matches the first character.
+        $last_char = $json[strlen($json) - 1];
+        if ('{' == $json[0] && '}' != $last_char) {
+            return false;
+        }
+        if ('[' == $json[0] && ']' != $last_char) {
+            return false;
+        }
+        if ('"' == $json[0] && '"' != $last_char) {
+            return false;
+        }
+
+        // See if the string contents are valid JSON.
+        return null !== json_decode($json);
     }
 
     /**

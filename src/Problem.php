@@ -312,9 +312,17 @@ class Problem extends CommonITILObject
                     $input = $this->setTechAndGroupFromItilCategory($input);
                     break;
             }
-
-            $input = $this->assign($input);
         }
+
+        return $input;
+    }
+
+
+    public function prepareInputForUpdate($input)
+    {
+        $input = $this->transformActorsInput($input);
+
+        $input = parent::prepareInputForUpdate($input);
 
         return $input;
     }

@@ -37,6 +37,7 @@ namespace tests\units;
 
 use CommonITILObject;
 use DbTestCase;
+use Glpi\Toolbox\Sanitizer;
 use Ticket;
 
 /* Test for inc/itilsolution.class.php */
@@ -80,6 +81,7 @@ class ITILSolution extends DbTestCase
         ]))->isGreaterThan(0);
 
         $this->boolean($ticket->isNewItem())->isFalse();
+        $this->boolean($ticket->getFromDB($ticket->getID()))->isTrue(); //reload from DB
         $this->variable($ticket->getField('status'))->isIdenticalTo($ticket::ASSIGNED);
 
         $solution = new \ITILSolution();
@@ -183,6 +185,7 @@ class ITILSolution extends DbTestCase
         ]))->isGreaterThan(0);
 
         $this->boolean($problem->isNewItem())->isFalse();
+        $this->boolean($problem->getFromDB($problem->getID()))->isTrue(); //reload from DB
         $this->variable($problem->getField('status'))->isIdenticalTo($problem::ASSIGNED);
 
         $solution = new \ITILSolution();
@@ -302,6 +305,7 @@ class ITILSolution extends DbTestCase
         ]))->isGreaterThan(0);
 
         $this->boolean($ticket->isNewItem())->isFalse();
+        $this->boolean($ticket->getFromDB($ticket->getID()))->isTrue(); //reload from DB
         $this->variable($ticket->getField('status'))->isIdenticalTo($ticket::ASSIGNED);
 
         $solution = new \ITILSolution();
@@ -351,8 +355,11 @@ class ITILSolution extends DbTestCase
             'items_id' => $ticket->getID(),
             'itemtype' => 'Ticket',
             'name'    => 'a solution',
-            'content' => '&lt;p&gt; &lt;/p&gt;&lt;p&gt;&lt;img id="3e29dffe-0237ea21-5e5e7034b1d1a1.00000000"'
-         . ' src="data:image/png;base64,' . $base64Image . '" width="12" height="12" /&gt;&lt;/p&gt;',
+            'content' => Sanitizer::sanitize(<<<HTML
+<p>Test with a ' (add)</p>
+<p><img id="3e29dffe-0237ea21-5e5e7034b1d1a1.00000000" src="data:image/png;base64,{$base64Image}" width="12" height="12"></p>
+HTML
+            ),
             '_content' => [
                 $filename,
             ],
@@ -367,6 +374,7 @@ class ITILSolution extends DbTestCase
 
         $instance->add($input);
         $this->boolean($instance->isNewItem())->isFalse();
+        $this->boolean($instance->getFromDB($instance->getId()))->isTrue();
         $expected = 'a href="/front/document.send.php?docid=';
         $this->string($instance->fields['content'])->contains($expected);
 
@@ -376,8 +384,11 @@ class ITILSolution extends DbTestCase
         copy(__DIR__ . '/../fixtures/uploads/bar.png', GLPI_TMP_DIR . '/' . $filename);
         $success = $instance->update([
             'id' => $instance->getID(),
-            'content' => '&lt;p&gt; &lt;/p&gt;&lt;p&gt;&lt;img id="3e29dffe-0237ea21-5e5e7034b1d1a1.33333333"'
-         . ' src="data:image/png;base64,' . $base64Image . '" width="12" height="12" /&gt;&lt;/p&gt;',
+            'content' => Sanitizer::sanitize(<<<HTML
+<p>Test with a ' (update)</p>
+<p><img id="3e29dffe-0237ea21-5e5e7034b1d1a1.33333333" src="data:image/png;base64,{$base64Image}" width="12" height="12"></p>
+HTML
+            ),
             '_content' => [
                 $filename,
             ],
@@ -389,6 +400,7 @@ class ITILSolution extends DbTestCase
             ]
         ]);
         $this->boolean($success)->isTrue();
+        $this->boolean($instance->getFromDB($instance->getId()))->isTrue();
         $expected = 'a href="/front/document.send.php?docid=';
         $this->string($instance->fields['content'])->contains($expected);
     }

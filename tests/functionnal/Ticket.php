@@ -38,9 +38,16 @@ namespace tests\units;
 use CommonDBTM;
 use CommonITILActor;
 use CommonITILObject;
+use Computer;
 use DbTestCase;
+use Entity;
 use Glpi\Team\Team;
 use Glpi\Toolbox\Sanitizer;
+use Group;
+use Group_Ticket;
+use ITILCategory;
+use Supplier;
+use Supplier_Ticket;
 use Symfony\Component\DomCrawler\Crawler;
 use Ticket_User;
 use TicketValidation;
@@ -50,126 +57,536 @@ use User;
 
 class Ticket extends DbTestCase
 {
-    public function ticketProvider()
+    protected function actorsProvider(): iterable
     {
-        return [
-            'single requester' => [
+        $default_use_notifications = 1;
+
+        $admin_user_id    = getItemByTypeName(User::class, 'glpi', true);
+        $tech_user_id     = getItemByTypeName(User::class, 'tech', true);
+        $normal_user_id   = getItemByTypeName(User::class, 'normal', true);
+        $postonly_user_id = getItemByTypeName(User::class, 'post-only', true);
+
+        $group_1_id = getItemByTypeName(Group::class, '_test_group_1', true);
+        $group_2_id = getItemByTypeName(Group::class, '_test_group_2', true);
+
+        $supplier_id = getItemByTypeName(Supplier::class, '_suplier01_name', true);
+
+        $actor_types = ['requester', 'assign', 'observer'];
+
+        foreach ($actor_types as $actor_type) {
+            $actor_type_value = constant(CommonITILActor::class . '::' . strtoupper($actor_type));
+
+            // single user
+            $expected_actors = [
                 [
-                    '_users_id_requester' => '3'
+                    'type'              => $actor_type_value,
+                    'itemtype'          => User::class,
+                    'items_id'          => $tech_user_id,
+                    'use_notification'  => $default_use_notifications,
+                    'alternative_email' => '',
                 ],
-            ],
-            'single unknown requester' => [
+            ];
+            // using historical keys
+            yield [
+                'actors_input'   => [
+                    "_users_id_{$actor_type}" => "$tech_user_id",
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+            // using _actors key
+            yield [
+                'actors_input'   => [
+                    '_actors' => [
+                        $actor_type => [
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => $tech_user_id,
+                                'use_notification'  => $default_use_notifications,
+                                'alternative_email' => '',
+                            ]
+                        ],
+                    ],
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+
+            // single email actor
+            $expected_actors = [
                 [
-                    '_users_id_requester'         => '0',
-                    '_users_id_requester_notif'   => [
+                    'type'              => $actor_type_value,
+                    'itemtype'          => User::class,
+                    'items_id'          => 0,
+                    'use_notification'  => 1,
+                    'alternative_email' => 'unknownuser@localhost.local',
+                ],
+            ];
+            // using historical keys
+            yield [
+                'actors_input'   => [
+                    "_users_id_{$actor_type}"       => '0',
+                    "_users_id_{$actor_type}_notif" => [
+                        'use_notification'   => '1',
+                        'alternative_email'  => 'unknownuser@localhost.local',
+                    ],
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+            // using _actors key
+            yield [
+                'actors_input'   => [
+                    '_actors' => [
+                        $actor_type => [
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => 0,
+                                'use_notification'  => 1,
+                                'alternative_email' => 'unknownuser@localhost.local',
+                            ]
+                        ],
+                    ],
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+
+            // single group
+            $expected_actors = [
+                [
+                    'type'     => $actor_type_value,
+                    'itemtype' => Group::class,
+                    'items_id' => $group_1_id,
+                ],
+            ];
+            // using historical keys
+            yield [
+                'actors_input'   => [
+                    "_groups_id_{$actor_type}" => "$group_1_id",
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+            // using _actors key
+            yield [
+                'actors_input'   => [
+                    '_actors' => [
+                        $actor_type => [
+                            [
+                                'itemtype' => Group::class,
+                                'items_id' => $group_1_id,
+                            ]
+                        ],
+                    ],
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+
+            // multiple actors
+            $expected_actors = [
+                [
+                    'type'              => $actor_type_value,
+                    'itemtype'          => User::class,
+                    'items_id'          => $tech_user_id,
+                    'use_notification'  => 1,
+                    'alternative_email' => 'alt-email@localhost.local',
+                ],
+                [
+                    'type'              => $actor_type_value,
+                    'itemtype'          => User::class,
+                    'items_id'          => $admin_user_id,
+                    'use_notification'  => 0,
+                    'alternative_email' => '',
+                ],
+                [
+                    'type'              => $actor_type_value,
+                    'itemtype'          => User::class,
+                    'items_id'          => 0,
+                    'use_notification'  => 1,
+                    'alternative_email' => 'unknownuser1@localhost.local',
+                ],
+                [
+                    'type'              => $actor_type_value,
+                    'itemtype'          => User::class,
+                    'items_id'          => 0,
+                    'use_notification'  => 1,
+                    'alternative_email' => 'unknownuser2@localhost.local',
+                ],
+                [
+                    'type'              => $actor_type_value,
+                    'itemtype'          => Group::class,
+                    'items_id'          => $group_1_id,
+                ],
+                [
+                    'type'              => $actor_type_value,
+                    'itemtype'          => Group::class,
+                    'items_id'          => $group_2_id,
+                ],
+            ];
+            // using historical keys
+            yield [
+                'actors_input'   => [
+                    "_users_id_{$actor_type}"       => ["$tech_user_id", "$admin_user_id", '0', '0'],
+                    "_users_id_{$actor_type}_notif" => [
+                        'use_notification'   => ['1', '0', '1', '1'],
+                        'alternative_email'  => ['alt-email@localhost.local', '', 'unknownuser1@localhost.local', 'unknownuser2@localhost.local'],
+                    ],
+                    "_groups_id_{$actor_type}"      => ["$group_1_id", "$group_2_id"],
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+            // using _actors key
+            yield [
+                'actors_input'   => [
+                    '_actors' => [
+                        $actor_type => [
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => $tech_user_id,
+                                'use_notification'  => 1,
+                                'alternative_email' => 'alt-email@localhost.local',
+                            ],
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => $admin_user_id,
+                                'use_notification'  => 0,
+                                'alternative_email' => '',
+                            ],
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => 0,
+                                'use_notification'  => 1,
+                                'alternative_email' => 'unknownuser1@localhost.local',
+                            ],
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => 0,
+                                'use_notification'  => 1,
+                                'alternative_email' => 'unknownuser2@localhost.local',
+                            ],
+                            [
+                                'itemtype'          => Group::class,
+                                'items_id'          => $group_1_id,
+                            ],
+                            [
+                                'itemtype'          => Group::class,
+                                'items_id'          => $group_2_id,
+                            ],
+                        ],
+                    ],
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+            // using mix between historical keys and _actors key
+            yield [
+                'actors_input'   => [
+                    "_users_id_{$actor_type}"       => ["$tech_user_id"],
+                    "_users_id_{$actor_type}_notif" => [
                         'use_notification'   => ['1'],
-                        'alternative_email'  => ['unknownuser@localhost.local']
+                        'alternative_email'  => ['alt-email@localhost.local'],
+                    ],
+                    '_actors' => [
+                        $actor_type => [
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => $admin_user_id,
+                                'use_notification'  => 0,
+                                'alternative_email' => '',
+                            ],
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => 0,
+                                'use_notification'  => 1,
+                                'alternative_email' => 'unknownuser1@localhost.local',
+                            ],
+                            [
+                                'itemtype'          => User::class,
+                                'items_id'          => 0,
+                                'use_notification'  => 1,
+                                'alternative_email' => 'unknownuser2@localhost.local',
+                            ],
+                            [
+                                'itemtype'          => Group::class,
+                                'items_id'          => $group_1_id,
+                            ],
+                            [
+                                'itemtype'          => Group::class,
+                                'items_id'          => $group_2_id,
+                            ],
+                        ],
+                    ],
+                ],
+                'expected_actors' => $expected_actors,
+            ];
+        }
+
+        // complete mix
+        $expected_actors = [
+            [
+                'type'              => CommonITILActor::REQUESTER,
+                'itemtype'          => User::class,
+                'items_id'          => $postonly_user_id,
+                'use_notification'  => $default_use_notifications,
+                'alternative_email' => '',
+            ],
+            [
+                'type'              => CommonITILActor::REQUESTER,
+                'itemtype'          => User::class,
+                'items_id'          => $normal_user_id,
+                'use_notification'  => $default_use_notifications,
+                'alternative_email' => '',
+            ],
+            [
+                'type'              => CommonITILActor::OBSERVER,
+                'itemtype'          => User::class,
+                'items_id'          => $normal_user_id,
+                'use_notification'  => 0,
+                'alternative_email' => '',
+            ],
+            [
+                'type'              => CommonITILActor::OBSERVER,
+                'itemtype'          => User::class,
+                'items_id'          => 0,
+                'use_notification'  => 1,
+                'alternative_email' => 'obs1@localhost.local',
+            ],
+            [
+                'type'              => CommonITILActor::OBSERVER,
+                'itemtype'          => User::class,
+                'items_id'          => 0,
+                'use_notification'  => 1,
+                'alternative_email' => 'obs1@localhost.local',
+            ],
+            [
+                'type'              => CommonITILActor::OBSERVER,
+                'itemtype'          => Group::class,
+                'items_id'          => $group_1_id,
+            ],
+            [
+                'type'              => CommonITILActor::ASSIGN,
+                'itemtype'          => User::class,
+                'items_id'          => $tech_user_id,
+                'use_notification'  => 1,
+                'alternative_email' => 'alternativeemail@localhost.local',
+            ],
+            [
+                'type'              => CommonITILActor::ASSIGN,
+                'itemtype'          => Group::class,
+                'items_id'          => $group_2_id,
+            ],
+            [
+                'type'              => CommonITILActor::ASSIGN,
+                'itemtype'          => Supplier::class,
+                'items_id'          => $supplier_id,
+            ],
+        ];
+        // using historical keys
+        yield [
+            'actors_input'   => [
+                '_users_id_requester'       => ["$postonly_user_id", "$normal_user_id"],
+                '_users_id_observer'        => ["$normal_user_id", '0', '0'],
+                '_users_id_observer_notif'  => [
+                    'use_notification'   => ['0', '1', '1'],
+                    'alternative_email'  => ['', 'obs1@localhost.local', 'obs2@localhost.local'],
+                ],
+                '_groups_id_observer'       => ["$group_1_id"],
+                '_users_id_assign'          => ["$tech_user_id"],
+                '_users_id_assign_notif'    => [
+                    'use_notification'   => ['1'],
+                    'alternative_email'  => ['alternativeemail@localhost.local'],
+                ],
+                '_groups_id_assign'         => ["$group_2_id"],
+                '_suppliers_id_assign'      => ["$supplier_id"],
+            ],
+            'expected_actors' => $expected_actors,
+        ];
+        // using _actors key
+        yield [
+            'actors_input'   => [
+                '_actors' => [
+                    'requester' => [
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => $postonly_user_id,
+                            'use_notification'  => $default_use_notifications,
+                            'alternative_email' => '',
+                        ],
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => $normal_user_id,
+                            'use_notification'  => $default_use_notifications,
+                            'alternative_email' => '',
+                        ],
+                    ],
+                    'observer' => [
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => $normal_user_id,
+                            'use_notification'  => 0,
+                            'alternative_email' => '',
+                        ],
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => 0,
+                            'use_notification'  => 1,
+                            'alternative_email' => 'obs1@localhost.local',
+                        ],
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => 0,
+                            'use_notification'  => 1,
+                            'alternative_email' => 'obs2@localhost.local',
+                        ],
+                        [
+                            'itemtype'          => Group::class,
+                            'items_id'          => $group_1_id,
+                        ],
+                    ],
+                    'assign' => [
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => $tech_user_id,
+                            'use_notification'  => 1,
+                            'alternative_email' => 'alternativeemail@localhost.local',
+                        ],
+                        [
+                            'itemtype'          => Group::class,
+                            'items_id'          => $group_2_id,
+                        ],
+                        [
+                            'itemtype'          => Supplier::class,
+                            'items_id'          => $supplier_id,
+                        ],
                     ],
                 ],
             ],
-            'multiple requesters' => [
-                [
-                    '_users_id_requester' => ['3', '5'],
+            'expected_actors' => $expected_actors,
+        ];
+        // using mix between historical keys and _actors key
+        yield [
+            'actors_input'   => [
+                '_users_id_requester'        => ["$postonly_user_id", "$normal_user_id"],
+                '_users_id_observer'        => ['0'],
+                '_users_id_observer_notif'  => [
+                    'use_notification'   => ['1'],
+                    'alternative_email'  => ['obs2@localhost.local'],
                 ],
-            ],
-            'multiple mixed requesters' => [
-                [
-                    '_users_id_requester'         => ['3', '5', '0'],
-                    '_users_id_requester_notif'   => [
-                        'use_notification'   => ['1', '0', '1'],
-                        'alternative_email'  => ['','', 'unknownuser@localhost.local']
+                '_actors' => [
+                    'requester' => [
+                        // Duplicates actor defined in "_users_id_requester", should not be a problem
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => $postonly_user_id,
+                            'use_notification'  => $default_use_notifications,
+                            'alternative_email' => '',
+                        ],
+                    ],
+                    'observer' => [
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => $normal_user_id,
+                            'use_notification'  => 0,
+                            'alternative_email' => '',
+                        ],
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => 0,
+                            'use_notification'  => 1,
+                            'alternative_email' => 'obs1@localhost.local',
+                        ],
+                        [
+                            'itemtype'          => Group::class,
+                            'items_id'          => $group_1_id,
+                        ],
+                    ],
+                    'assign' => [
+                        [
+                            'itemtype'          => User::class,
+                            'items_id'          => $tech_user_id,
+                            'use_notification'  => 1,
+                            'alternative_email' => 'alternativeemail@localhost.local',
+                        ],
+                        [
+                            'itemtype'          => Group::class,
+                            'items_id'          => $group_2_id,
+                        ],
+                        [
+                            'itemtype'          => Supplier::class,
+                            'items_id'          => $supplier_id,
+                        ],
                     ],
                 ],
             ],
-            'single observer' => [
-                [
-                    '_users_id_observer' => '3'
-                ],
-            ],
-            'multiple observers' => [
-                [
-                    '_users_id_observer' => ['3', '5'],
-                ],
-            ],
-            'single assign' => [
-                [
-                    '_users_id_assign' => '3'
-                ],
-            ],
-            'multiple assigns' => [
-                [
-                    '_users_id_assign' => ['3', '5'],
-                ],
-            ],
+            'expected_actors' => $expected_actors,
         ];
     }
 
     /**
-     * @dataProvider ticketProvider
+     * @dataProvider actorsProvider
      */
-    public function testCreateTicketWithActors($ticketActors)
+    public function testCreateTicketWithActors(array $actors_input, array $expected_actors): void
     {
+        $this->login();
+
         $ticket = new \Ticket();
-        $this->integer((int)$ticket->add([
-            'name'    => 'ticket title',
-            'content' => 'a description',
-        ] + $ticketActors))->isGreaterThan(0);
+        $ticket_id = $ticket->add(
+            [
+                'name'        => 'ticket title',
+                'content'     => 'a description',
+                'entities_id' => getItemByTypeName('Entity', '_test_root_entity', true),
+            ] + $actors_input
+        );
+        $this->integer($ticket_id)->isGreaterThan(0);
 
-        $this->boolean($ticket->isNewItem())->isFalse();
-        $ticketId = $ticket->getID();
-
-        foreach ($ticketActors as $actorType => $actorsList) {
-           // Convert single actor (scalar value) to array
-            if (!is_array($actorsList)) {
-                $actorsList = [$actorsList];
-            }
-
-           // Check all actors are assigned to the ticket
-            foreach ($actorsList as $index => $actor) {
-                $notify = isset($actorList['_users_id_requester_notif']['use_notification'][$index])
-                      ? $actorList['_users_id_requester_notif']['use_notification'][$index]
-                      : 1;
-                $alternateEmail = isset($actorList['_users_id_requester_notif']['use_notification'][$index])
-                              ? $actorList['_users_id_requester_notif']['alternative_email'][$index]
-                              : '';
-                switch ($actorType) {
-                    case '_users_id_requester':
-                       //$this->testTicketUser($ticket, $actor, \CommonITILActor::REQUESTER, $notify, $alternateEmail);
-                        break;
-                    case '_users_id_observer':
-                        $this->testTicketUser($ticket, $actor, \CommonITILActor::OBSERVER, $notify, $alternateEmail);
-                        break;
-                    case '_users_id_assign':
-                        $this->testTicketUser($ticket, $actor, \CommonITILActor::ASSIGN, $notify, $alternateEmail);
-                        break;
-                }
-            }
-        }
+        $this->checkActors($ticket, $expected_actors);
     }
 
-    protected function testTicketUser(\Ticket $ticket, $actor, $role, $notify, $alternateEmail)
+    /**
+     * @dataProvider actorsProvider
+     */
+    public function testUpdateTicketWithActors(array $actors_input, array $expected_actors): void
     {
-        if ($actor > 0) {
-            $user = new \User();
-            $this->boolean($user->getFromDB($actor))->isTrue();
-            $this->boolean($user->isNewItem())->isFalse();
+        $this->login();
 
-            $ticketUser = new \Ticket_User();
-            $this->boolean($ticketUser->getFromDBForItems($ticket, $user))->isTrue();
-        } else {
-            $ticketId = $ticket->getID();
-            $ticketUser = new \Ticket_User();
-            $this->boolean(
-                $ticketUser->getFromDBByCrit([
-                    'tickets_id'         => $ticketId,
-                    'users_id'           => 0,
-                    'alternative_email'  => $alternateEmail
-                ])
-            )->isTrue();
+        $ticket = new \Ticket();
+        $ticket_id = $ticket->add(
+            [
+                'name'        => 'ticket title',
+                'content'     => 'a description',
+                'entities_id' => getItemByTypeName('Entity', '_test_root_entity', true),
+            ]
+        );
+        $this->integer($ticket_id)->isGreaterThan(0);
+
+        $this->boolean($ticket->update(['id' => $ticket_id] + $actors_input))->isTrue();
+
+        $this->checkActors($ticket, $expected_actors);
+    }
+
+    /**
+     * Check that ticket actors are matching expected actors.
+     *
+     * @param \Ticket $ticket
+     * @param array $expected_actors
+     *
+     * @return void
+     */
+    private function checkActors(\Ticket $ticket, array $expected_actors): void
+    {
+        foreach ([Ticket_User::class, Group_Ticket::class, Supplier_Ticket::class] as $link_class) {
+            $link_obj = new $link_class();
+
+            $expected_actors_for_itemtype = array_filter(
+                $expected_actors,
+                function (array $actor) use ($link_obj) {
+                    return $actor['itemtype'] === getItemtypeForForeignKeyField($link_obj->getActorForeignKey());
+                }
+            );
+
+            foreach ($expected_actors_for_itemtype as $actor) {
+                $actor[$link_obj->getActorForeignKey()] = $actor['items_id'];
+                unset($actor['itemtype'], $actor['items_id']);
+                $this->boolean($link_obj->getFromDBByCrit(['tickets_id' => $ticket->getID()] + $actor))
+                    ->isTrue(sprintf('Actor not found: %s', json_encode($actor)));
+            }
+            $this->integer($link_obj->countForItem($ticket))->isEqualTo(count($expected_actors_for_itemtype));
         }
-        $this->boolean($ticketUser->isNewItem())->isFalse();
-        $this->variable($ticketUser->getField('type'))->isEqualTo($role);
-        $this->variable($ticketUser->getField('use_notification'))->isEqualTo($notify);
     }
 
     public function testTasksFromTemplate()
@@ -3087,8 +3504,11 @@ class Ticket extends DbTestCase
         $instance = new \Ticket();
         $input = [
             'name'    => 'a ticket',
-            'content' => '&lt;p&gt; &lt;/p&gt;&lt;p&gt;&lt;img id="3e29dffe-0237ea21-5e5e7034b1d1a1.00000000"'
-         . ' src="data:image/png;base64,' . $base64Image . '" width="12" height="12" /&gt;&lt;/p&gt;',
+            'content' => Sanitizer::sanitize(<<<HTML
+<p>Test with a ' (add)</p>
+<p><img id="3e29dffe-0237ea21-5e5e7034b1d1a1.00000000" src="data:image/png;base64,{$base64Image}" width="12" height="12"></p>
+HTML
+            ),
             '_content' => [
                 $filename,
             ],
@@ -3101,6 +3521,7 @@ class Ticket extends DbTestCase
         ];
         copy(__DIR__ . '/../fixtures/uploads/foo.png', GLPI_TMP_DIR . '/' . $filename);
         $instance->add($input);
+        $this->boolean($instance->getFromDB($instance->getId()))->isTrue();
         $expected = 'a href="/front/document.send.php?docid=';
         $this->string($instance->fields['content'])->contains($expected);
 
@@ -3110,8 +3531,11 @@ class Ticket extends DbTestCase
         copy(__DIR__ . '/../fixtures/uploads/bar.png', GLPI_TMP_DIR . '/' . $filename);
         $instance->update([
             'id' => $instance->getID(),
-            'content' => '&lt;p&gt; &lt;/p&gt;&lt;p&gt;&lt;img id="3e29dffe-0237ea21-5e5e7034b1d1a1.33333333"'
-         . ' src="data:image/png;base64,' . $base64Image . '" width="12" height="12" /&gt;&lt;/p&gt;',
+            'content' => Sanitizer::sanitize(<<<HTML
+<p>Test with a ' (update)</p>
+<p><img id="3e29dffe-0237ea21-5e5e7034b1d1a1.33333333" src="data:image/png;base64,{$base64Image}" width="12" height="12"></p>
+HTML
+            ),
             '_content' => [
                 $filename,
             ],
@@ -3122,6 +3546,7 @@ class Ticket extends DbTestCase
                 '5e5e92ffd9bd91.44444444',
             ]
         ]);
+        $this->boolean($instance->getFromDB($instance->getId()))->isTrue();
         $expected = 'a href="/front/document.send.php?docid=';
         $this->string($instance->fields['content'])->contains($expected);
     }
@@ -4508,5 +4933,533 @@ HTML
         $this->boolean((bool)$ticket->getFromDB($ticket->getID()))->isTrue();
         $this->integer($ticket->fields['status'])->isEqualTo(\Ticket::ASSIGNED);
         $this->boolean((bool)$ticket->needReopen())->isFalse();
+    }
+
+    protected function assignFromCategoryOrItemProvider(): iterable
+    {
+        $tech_id    = getItemByTypeName('User', 'tech', true);
+        $glpi_id    = getItemByTypeName('User', 'glpi', true);
+        $normal_id  = getItemByTypeName('User', 'normal', true);
+
+        $group_1_id = getItemByTypeName('Group', '_test_group_1', true);
+        $group_2_id = getItemByTypeName('Group', '_test_group_2', true);
+
+        $group = new Group();
+        $group_3_id = $group->add(
+            [
+                'name'        => 'Group 3',
+                'entities_id' => getItemByTypeName('Entity', '_test_root_entity', true),
+                'is_assign'   => 1,
+            ]
+        );
+        $this->integer($group_3_id)->isGreaterThan(0);
+
+        // _skip_auto_assign in input should prevent auto assign
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_HARDWARE_CATEGORY,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+                '_skip_auto_assign' => 1,
+            ],
+            'expected_actors'  => [
+            ],
+        ];
+
+        // Entity::CONFIG_NEVER case
+        yield [
+            'auto_assign_mode' => Entity::CONFIG_NEVER,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_HARDWARE_CATEGORY case
+        // - with no assignee from input
+        // - with hardware having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_HARDWARE_CATEGORY,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $glpi_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_2_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_HARDWARE_CATEGORY case
+        // - with no assignee from input
+        // - with hardware having only user defined
+        // - with category having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_HARDWARE_CATEGORY,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => 0,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $tech_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_2_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_HARDWARE_CATEGORY case
+        // - with no assignee from input
+        // - with hardware having only group defined
+        // - with category having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_HARDWARE_CATEGORY,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => 0,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $glpi_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_1_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_HARDWARE_CATEGORY case
+        // - with no assignee from input
+        // - with hardware having neither user or group defined
+        // - with category having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_HARDWARE_CATEGORY,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => 0,
+                'groups_id_tech' => 0,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $tech_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_1_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_HARDWARE_CATEGORY case
+        // - with assignee from input (user)
+        // - with hardware having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_HARDWARE_CATEGORY,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+                '_users_id_assign' => [$normal_id],
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $normal_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_2_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_HARDWARE_CATEGORY case
+        // - with assignee from input ("email" actor)
+        // - with hardware having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_HARDWARE_CATEGORY,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+                '_users_id_assign' => [0],
+                '_users_id_assign_notif' => [
+                    'use_notification'  => [1],
+                    'alternative_email' => ['test@glpi-project.org'],
+                ],
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => 0,
+                    'use_notification'  => 1,
+                    'alternative_email' => 'test@glpi-project.org',
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_2_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_HARDWARE_CATEGORY case
+        // - with assignee from input (group)
+        // - with hardware having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_HARDWARE_CATEGORY,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+                '_groups_id_assign' => [$group_3_id],
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $glpi_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_3_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_CATEGORY_HARDWARE case
+        // - with no assignee from input
+        // - with category having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_CATEGORY_HARDWARE,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $tech_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_1_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_CATEGORY_HARDWARE case
+        // - with no assignee from input
+        // - with category having only user defined
+        // - with hardware having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_CATEGORY_HARDWARE,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => 0,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $tech_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_2_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_CATEGORY_HARDWARE case
+        // - with no assignee from input
+        // - with category having only group defined
+        // - with hardware having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_CATEGORY_HARDWARE,
+            'category_input'   => [
+                'users_id'  => 0,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $glpi_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_1_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_CATEGORY_HARDWARE case
+        // - with no assignee from input
+        // - with category having neither user or group defined
+        // - with hardware having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_CATEGORY_HARDWARE,
+            'category_input'   => [
+                'users_id'  => 0,
+                'groups_id' => 0,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $glpi_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_2_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_CATEGORY_HARDWARE case
+        // - with assignee from input (user)
+        // - with hardware having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_CATEGORY_HARDWARE,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+                '_users_id_assign' => [$normal_id],
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $normal_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_1_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_CATEGORY_HARDWARE case
+        // - with assignee from input ("email" actor)
+        // - with category having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_CATEGORY_HARDWARE,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+                '_users_id_assign' => [0],
+                '_users_id_assign_notif' => [
+                    'use_notification'  => [1],
+                    'alternative_email' => ['test@glpi-project.org'],
+                ],
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => 0,
+                    'use_notification'  => 1,
+                    'alternative_email' => 'test@glpi-project.org',
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_1_id,
+                ],
+            ],
+        ];
+
+        // Entity::AUTO_ASSIGN_CATEGORY_HARDWARE case
+        // - with assignee from input (group)
+        // - with category having both user and group defined
+        yield [
+            'auto_assign_mode' => Entity::AUTO_ASSIGN_CATEGORY_HARDWARE,
+            'category_input'   => [
+                'users_id'  => $tech_id,
+                'groups_id' => $group_1_id,
+            ],
+            'computer_input'   => [
+                'users_id_tech'  => $glpi_id,
+                'groups_id_tech' => $group_2_id,
+            ],
+            'ticket_input'     => [
+                '_groups_id_assign' => [$group_3_id],
+            ],
+            'expected_actors'  => [
+                [
+                    'itemtype' => User::class,
+                    'items_id' => $tech_id,
+                ],
+                [
+                    'itemtype' => Group::class,
+                    'items_id' => $group_3_id,
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @dataProvider assignFromCategoryOrItemProvider
+     */
+    public function testAssignFromCategoryOrItem(
+        int $auto_assign_mode,
+        ?array $category_input,
+        ?array $computer_input,
+        array $ticket_input,
+        array $expected_actors
+    ): void {
+        $entity_id = getItemByTypeName('Entity', '_test_root_entity', true);
+
+        $this->login();
+
+        $entity = new Entity();
+        $this->boolean($entity->update(['id' => $entity_id, 'auto_assign_mode' => $auto_assign_mode]))->isTrue();
+
+        $itilcategory_id = 0;
+        if ($category_input !== null) {
+            $itilcategory = new ITILCategory();
+            $itilcategory_id = $itilcategory->add(
+                $category_input + [
+                    'name'        => __METHOD__,
+                    'entities_id' => $entity_id,
+                ]
+            );
+            $this->integer($itilcategory_id)->isGreaterThan(0);
+        }
+
+        $items_id = [];
+        if ($computer_input !== null) {
+            $computer = new Computer();
+            $computer_id = $computer->add(
+                $computer_input + [
+                    'name'        => __METHOD__,
+                    'entities_id' => $entity_id,
+                ]
+            );
+            $this->integer($computer_id)->isGreaterThan(0);
+            $items_id[Computer::class] = [$computer_id];
+        }
+
+        $ticket = new \Ticket();
+        $ticket_id = $ticket->add(
+            $ticket_input + [
+                'name'              => __METHOD__,
+                'content'           => __METHOD__,
+                'entities_id'       => $entity_id,
+                'itilcategories_id' => $itilcategory_id,
+                'items_id'          => $items_id,
+            ]
+        );
+        $this->integer($ticket_id)->isGreaterThan(0);
+
+        $ticket->getFromDB($ticket->getID());
+        $actors = $ticket->getActorsForType(CommonITILActor::ASSIGN);
+        $this->array($actors)->hasSize(count($expected_actors));
+
+        foreach ($expected_actors as $expected_actor) {
+            $found = false;
+            foreach ($actors as $actor) {
+                if (array_intersect_assoc($expected_actor, $actor) === $expected_actor) {
+                    // Found an actor that has same properties as those defined in expected actor
+                    $found = true;
+                    break;
+                }
+            }
+            $this->boolean($found)->isTrue(json_encode($expected_actor));
+        }
     }
 }

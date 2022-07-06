@@ -9,6 +9,7 @@
  *
  * @copyright 2015-2022 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
+ * @copyright 2010-2022 by the FusionInventory Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
  * ---------------------------------------------------------------------
@@ -48,12 +49,16 @@ use DevicePowerSupply;
 use DeviceProcessor;
 use DeviceSimcard;
 use DeviceSoundCard;
+use Dropdown;
 use Glpi\Agent\Communication\AbstractRequest;
 use Glpi\Application\View\TemplateRenderer;
 use Glpi\Toolbox\Sanitizer;
 use Html;
+use Monitor;
 use NetworkPortType;
+use Printer;
 use Session;
+use State;
 use Toolbox;
 use wapmorgan\UnifiedArchive\UnifiedArchive;
 
@@ -87,6 +92,9 @@ use wapmorgan\UnifiedArchive\UnifiedArchive;
  * @property int $component_removablemedia
  * @property int $component_powersupply
  * @property int $inventory_frequency
+ * @property int $import_monitor
+ * @property int $import_printer
+ * @property int $import_peripheral
  *
  */
 class Conf extends CommonGLPI
@@ -120,8 +128,18 @@ class Conf extends CommonGLPI
         'vm_as_computer'                 => 0,
         'component_removablemedia'       => 1,
         'component_powersupply'          => 1,
-        'inventory_frequency'            => AbstractRequest::DEFAULT_FREQUENCY
+        'inventory_frequency'            => AbstractRequest::DEFAULT_FREQUENCY,
+        'import_monitor'                 => 1,
+        'import_printer'                 => 1,
+        'import_peripheral'              => 1,
+        'stale_agents_delay'             => 0,
+        'stale_agents_action'            => 0,
+        'stale_agents_status'            => 0,
     ];
+
+    public const STALE_AGENT_ACTION_CLEAN = 0;
+
+    public const STALE_AGENT_ACTION_STATUS = 1;
 
     /**
      * Display form for import the XML
@@ -253,6 +271,19 @@ class Conf extends CommonGLPI
         }
     }
 
+    /**
+     * Get possible actions for stale agents
+     *
+     * @return string
+     */
+    public static function getStaleAgentActions(): array
+    {
+        return [
+            self::STALE_AGENT_ACTION_CLEAN  => __('Clean agents'),
+            self::STALE_AGENT_ACTION_STATUS => __('Change the status'),
+        ];
+    }
+
     public function defineTabs($options = [])
     {
         $ong = [];
@@ -295,6 +326,7 @@ class Conf extends CommonGLPI
      * Print the config form for display
      *
      * @return true (Always true)
+     * @copyright 2010-2022 by the FusionInventory Development Team. (Agent cleanup section)
      **/
     public function showConfigForm()
     {
@@ -302,6 +334,7 @@ class Conf extends CommonGLPI
 
         $config = \Config::getConfigurationValues('inventory');
         $canedit = \Config::canUpdate();
+        $rand = mt_rand();
 
         if ($canedit) {
             echo "<form name='form' action='" . $CFG_GLPI['root_doc'] . "/front/inventory.conf.php' method='post'>";
@@ -346,21 +379,48 @@ class Conf extends CommonGLPI
 
         echo "<tr class='tab_bg_1'>";
         echo "<td>";
-        echo "<label for='states_id_default'>";
-        echo __('Default status');
+        echo "<label for='import_monitor'>";
+        echo Monitor::getTypeName(Session::getPluralNumber());
         echo "</label>";
         echo "</td>";
         echo "<td>";
-        \Dropdown::show(
-            'State',
-            [
-                'name'   => 'states_id_default',
-                'id'     => 'states_id_default',
-                'value'  => $config['states_id_default']
-            ]
-        );
+        Html::showCheckbox([
+            'name'      => 'import_monitor',
+            'id'        => 'import_monitor',
+            'checked'   => $config['import_monitor']
+        ]);
         echo "</td>";
 
+        echo "</td>";
+        echo "<td>";
+        echo "<label for='import_printer'>";
+        echo Printer::getTypeName(Session::getPluralNumber());
+        echo "</label>";
+        echo "</td>";
+        echo "<td>";
+        Html::showCheckbox([
+            'name'      => 'import_printer',
+            'id'        => 'import_printer',
+            'checked'   => $config['import_printer']
+        ]);
+        echo "</td>";
+        echo "</tr>";
+
+        echo "<tr class='tab_bg_1'>";
+        echo "<td>";
+        echo "<label for='import_peripheral'>";
+        echo \Peripheral::getTypeName(Session::getPluralNumber());
+        echo "</label>";
+        echo "</td>";
+        echo "<td>";
+        Html::showCheckbox([
+            'name'      => 'import_peripheral',
+            'id'        => 'import_peripheral',
+            'checked'   => $config['import_peripheral']
+        ]);
+        echo "</td>";
+
+        echo "</td>";
         echo "<td>";
         echo "<label for='import_antivirus'>";
         echo \ComputerAntivirus::getTypeName(Session::getPluralNumber());
@@ -372,6 +432,39 @@ class Conf extends CommonGLPI
             'id'        => 'import_antivirus',
             'checked'   => $config['import_antivirus']
         ]);
+        echo "</td>";
+        echo "</tr>";
+
+        echo "<tr class='tab_bg_1'>";
+        echo "<td>";
+        echo "<label for='dropdown_states_id_default$rand'>";
+        echo __('Default status');
+        echo "</label>";
+        echo "</td>";
+        echo "<td>";
+        \Dropdown::show(
+            'State',
+            [
+                'name'   => 'states_id_default',
+                'id'     => 'states_id_default',
+                'value'  => $config['states_id_default'],
+                'rand' => $rand
+            ]
+        );
+        echo "</td>";
+
+        echo "<td><label for='dropdown_inventory_frequency$rand'>" . __('Inventory frequency (in hours)') .
+            "</label></td><td>";
+        \Dropdown::showNumber(
+            "inventory_frequency",
+            [
+                'value' => $config['inventory_frequency'],
+                'min' => 1,
+                'max' => 240,
+                'rand' => $rand
+            ]
+        );
+
         echo "</td>";
         echo "</tr>";
 
@@ -389,26 +482,10 @@ class Conf extends CommonGLPI
         ]);
 
         echo "</td>";
-
-        $rand = mt_rand();
-        echo "<td><label for='dropdown_inventory_frequency$rand'>" . __('Inventory frequency (in hours)') .
-            "</label></td><td>";
-        \Dropdown::showNumber(
-            "inventory_frequency",
-            [
-                'value' => $config['inventory_frequency'],
-                'min' => 1,
-                'max' => 240,
-                'rand' => $rand
-            ]
-        );
-
-        echo "</td>";
         echo "</tr>";
 
         echo "<tr class='tab_bg_1'>";
         echo "<th colspan='4'>";
-       //echo \Rule::getTypeName(Session::getPluralNumber());
         echo __('Related configurations');
         echo "</th>";
         echo "</tr>";
@@ -458,7 +535,7 @@ class Conf extends CommonGLPI
         ]);
         echo "</td>";
         echo "<td>";
-        echo "<label for='vm_type'>";
+        echo "<label for='dropdown_vm_type$rand'>";
         echo \ComputerType::getTypeName(1);
         echo "</label>";
         echo "</td>";
@@ -468,7 +545,8 @@ class Conf extends CommonGLPI
             [
                 'name'   => 'vm_type',
                 'id'     => 'vm_type',
-                'value'  => $config['vm_type']
+                'value'  => $config['vm_type'],
+                'rand' => $rand
             ]
         );
         echo "</td>";
@@ -488,7 +566,7 @@ class Conf extends CommonGLPI
         ]);
         echo "</td>";
         echo "<td>";
-        echo "<label for='import_vm'>";
+        echo "<label for='vm_components'>";
         echo __('Create components for virtual machines');
         echo "</label>";
         echo "</td>";
@@ -711,6 +789,68 @@ class Conf extends CommonGLPI
             'id'        => 'component_battery',
             'checked'   => $config['component_battery']
         ]);
+        echo "</td>";
+        echo "</tr>";
+
+        echo "<tr class='tab_bg_1'>";
+        echo "<th colspan=4 >" . __('Agent cleanup') . "</th></tr>";
+        echo "<tr class='tab_bg_1'>";
+        echo "<td>" . __('Update agents who have not contacted the server for (in days)') . "</td>";
+        echo "<td width='20%'>";
+        Dropdown::showNumber(
+            'stale_agents_delay',
+            [
+                'value' => $config['stale_agents_delay'] ?? 0,
+                'min'   => 1,
+                'max'   => 1000,
+                'toadd' => ['0' => __('Disabled')]
+            ]
+        );
+        echo "</td>";
+        echo "<td>" . _n('Action', 'Actions', 1) . "</td>";
+        echo "<td width='20%'>";
+        //action
+        $rand = Dropdown::showFromArray(
+            'stale_agents_action',
+            self::getStaleAgentActions(),
+            [
+                'value' => $config['stale_agents_action'] ?? self::STALE_AGENT_ACTION_CLEAN,
+                'on_change' => 'changestatus();',
+            ]
+        );
+        //if action == action_status => show blocation else hide blocaction
+        echo Html::scriptBlock("
+         function changestatus() {
+            if ($('#dropdown_stale_agents_action$rand').val() != 0) {
+               $('#blocaction1').show();
+               $('#blocaction2').show();
+            } else {
+               $('#blocaction1').hide();
+               $('#blocaction2').hide();
+            }
+         }
+         changestatus();
+
+      ");
+        echo "</td>";
+        echo "</tr>";
+        //blocaction with status
+        echo "<tr class='tab_bg_1'><td colspan=2></td>";
+        echo "<td>";
+        echo "<span id='blocaction1' style='display:none'>";
+        echo __('Change the status');
+        echo "</span>";
+        echo "</td>";
+        echo "<td width='20%'>";
+        echo "<span id='blocaction2' style='display:none'>";
+        State::dropdown(
+            [
+                'name'   => 'stale_agents_status',
+                'value'  => $config['stale_agents_status'] ?? -1,
+                'entity' => $_SESSION['glpiactive_entity']
+            ]
+        );
+        echo "</span>";
         echo "</td>";
         echo "</tr>";
 
