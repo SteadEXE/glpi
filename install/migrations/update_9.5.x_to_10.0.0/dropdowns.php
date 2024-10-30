@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,22 +34,13 @@
  */
 
 /**
- * @var DB $DB
- * @var Migration $migration
+ * @var \Migration $migration
  */
 
-global $CFG_GLPI;
-
-$all_dropdowns = Dropdown::getStandardDropdownItemTypes();
-$dc_model_dropdowns = [];
-
-foreach ($all_dropdowns as $group) {
-    foreach ($group as $dropdown => $dropdown_name) {
-        if (is_subclass_of($dropdown, CommonDCModelDropdown::class)) {
-            $dc_model_dropdowns[] = $dropdown;
-        }
-    }
-}
+$dc_model_dropdowns = [
+    'EnclosureModel', 'PeripheralModel', 'PDUModel', 'NetworkEquipmentModel', 'MonitorModel', 'ComputerModel',
+    'PassiveDCEquipmentModel'
+];
 
 foreach ($dc_model_dropdowns as $model_dropdown) {
     $migration->changeSearchOption($model_dropdown, 130, 3);

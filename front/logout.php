@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -37,14 +37,16 @@
  * @since 0.85
  */
 
-include('../inc/includes.php');
-
-//@session_start();
+/**
+ * @var array $CFG_GLPI
+ */
+global $CFG_GLPI;
 
 if (
     $CFG_GLPI["ssovariables_id"] > 0
     && strlen($CFG_GLPI['ssologout_url']) > 0
 ) {
+    Session::cleanOnLogout();
     Html::redirect($CFG_GLPI["ssologout_url"]);
 }
 
@@ -52,13 +54,13 @@ if (
     !isset($_SESSION["noAUTO"])
     && isset($_SESSION["glpiauthtype"])
     && $_SESSION["glpiauthtype"] == Auth::CAS
-    && Toolbox::canUseCAS()
 ) {
     phpCAS::client(
-        CAS_VERSION_2_0,
+        constant($CFG_GLPI["cas_version"]),
         $CFG_GLPI["cas_host"],
         intval($CFG_GLPI["cas_port"]),
         $CFG_GLPI["cas_uri"],
+        $CFG_GLPI["url_base"],
         false
     );
     phpCAS::setServerLogoutURL(strval($CFG_GLPI["cas_logout"]));
@@ -69,9 +71,9 @@ $toADD = "";
 
 // Redirect management
 if (isset($_POST['redirect']) && (strlen($_POST['redirect']) > 0)) {
-    $toADD = "?redirect=" . $_POST['redirect'];
+    $toADD = "?redirect=" . rawurlencode($_POST['redirect']);
 } else if (isset($_GET['redirect']) && (strlen($_GET['redirect']) > 0)) {
-    $toADD = "?redirect=" . $_GET['redirect'];
+    $toADD = "?redirect=" . rawurlencode($_GET['redirect']);
 }
 
 if (isset($_SESSION["noAUTO"]) || isset($_GET['noAUTO'])) {
@@ -83,10 +85,7 @@ if (isset($_SESSION["noAUTO"]) || isset($_GET['noAUTO'])) {
     $toADD .= "noAUTO=1";
 }
 
-Session::destroy();
-
-//Remove cookie to allow new login
-Auth::setRememberMeCookie('');
+Session::cleanOnLogout();
 
 // Redirect to the login-page
 Html::redirect($CFG_GLPI["root_doc"] . "/index.php" . $toADD);

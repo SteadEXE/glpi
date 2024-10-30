@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -32,10 +32,6 @@
  *
  * ---------------------------------------------------------------------
  */
-
-if (!defined('GLPI_ROOT')) {
-    include('../inc/includes.php');
-}
 
 Session::checkCentralAccess();
 
@@ -67,16 +63,11 @@ $rulecollection->checkGlobal(READ);
 
 Html::popHeader(__('Setup'), $_SERVER['PHP_SELF']);
 
-// Need for RuleEngines
-foreach ($_POST as $key => $val) {
-    $_POST[$key] = stripslashes($val);
-}
 $rulecollection->showRulesEnginePreviewCriteriasForm($_SERVER['PHP_SELF'], $_POST, $condition);
 
 if (isset($_POST["test_all_rules"])) {
    //Unset values that must not be processed by the rule
-    unset($_POST["sub_type"]);
-    unset($_POST["test_all_rules"]);
+    unset($_POST["sub_type"], $_POST["test_all_rules"]);
 
     echo "<br>";
     $rulecollection->showRulesEnginePreviewResultsForm($_SERVER['PHP_SELF'], $_POST, $condition);

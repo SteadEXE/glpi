@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -58,6 +58,11 @@ class Contact extends CommonDBTM
         return _n('Contact', 'Contacts', $nb);
     }
 
+    public static function getSectorizedDetails(): array
+    {
+        return ['management', self::class];
+    }
+
     public function prepareInputForAdd($input)
     {
         $input = parent::prepareInputForAdd($input);
@@ -101,10 +106,11 @@ class Contact extends CommonDBTM
     /**
      * Get address of the contact (company one)
      *
-     *@return string containing the address
-     **/
+     * @return array|null Address related fields.
+     */
     public function getAddress()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $iterator = $DB->request([
@@ -131,6 +137,7 @@ class Contact extends CommonDBTM
         if ($data = $iterator->current()) {
             return $data;
         }
+        return null;
     }
 
 
@@ -141,6 +148,7 @@ class Contact extends CommonDBTM
      **/
     public function getWebsite()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $iterator = $DB->request([
@@ -185,13 +193,12 @@ class Contact extends CommonDBTM
 
     public function getSpecificMassiveActions($checkitem = null)
     {
-
         $isadmin = static::canUpdate();
         $actions = parent::getSpecificMassiveActions($checkitem);
 
         if ($isadmin) {
             $actions['Contact_Supplier' . MassiveAction::CLASS_ACTION_SEPARATOR . 'add']
-               = _x('button', 'Add a supplier');
+               = _sx('button', 'Add a supplier');
         }
 
         return $actions;
@@ -453,7 +460,7 @@ class Contact extends CommonDBTM
         $vcard->add('TEL', $this->fields["mobile"], ['type' => 'WORK;CELL']);
         $vcard->add('URL', $this->GetWebsite(), ['type' => 'WORK']);
 
-        $addr = $this->GetAddress();
+        $addr = $this->getAddress();
         if (is_array($addr)) {
             $addr_string = implode(";", array_filter($addr));
             $vcard->add('ADR', $addr_string, ['type' => 'WORK;POSTAL']);

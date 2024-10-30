@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,9 +33,7 @@
  * ---------------------------------------------------------------------
  */
 
-if (!defined('GLPI_ROOT')) {
-    include('../inc/includes.php');
-}
+use Glpi\Exception\Http\BadRequestHttpException;
 
 Session::checkCentralAccess();
 
@@ -55,8 +53,9 @@ if (isset($_POST["rules_id"])) {
     $rules_id = 0;
 }
 
+/** @var Rule $rule */
 if (!$rule = getItemForItemtype($sub_type)) {
-    exit;
+    throw new BadRequestHttpException();
 }
 $rule->checkGlobal(READ);
 
@@ -67,15 +66,9 @@ $rule->showRulePreviewCriteriasForm($_SERVER['PHP_SELF'], $rules_id);
 if (isset($_POST["test_rule"])) {
     $params = [];
    //Unset values that must not be processed by the rule
-    unset($_POST["test_rule"]);
-    unset($_POST["rules_id"]);
-    unset($_POST["sub_type"]);
+    unset($_POST["test_rule"], $_POST["rules_id"], $_POST["sub_type"]);
     $rule->getRuleWithCriteriasAndActions($rules_id, 1, 1);
 
-   // Need for RuleEngines
-    foreach ($_POST as $key => $val) {
-        $_POST[$key] = stripslashes($val);
-    }
    //Add rules specific POST fields to the param array
     $params = $rule->addSpecificParamsForPreview($params);
 

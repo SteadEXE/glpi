@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,11 +33,20 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Application\View\TemplateRenderer;
+use Glpi\Asset\AssetDefinitionManager;
+use Glpi\DBAL\QueryExpression;
+use Glpi\DBAL\QuerySubQuery;
+use Glpi\Event;
+use Glpi\Form\Form;
+
 /**
  * Profile class
  **/
 class Profile extends CommonDBTM
 {
+    use \Glpi\Features\Clonable;
+
    // Specific ones
 
    /// Helpdesk fields of helpdesk profiles
@@ -113,26 +122,25 @@ class Profile extends CommonDBTM
         }
     }
 
-
     public function getForbiddenStandardMassiveAction()
     {
-
         $forbidden   = parent::getForbiddenStandardMassiveAction();
         $forbidden[] = 'update';
-        $forbidden[] = 'clone';
         return $forbidden;
     }
-
 
     public static function getTypeName($nb = 0)
     {
         return _n('Profile', 'Profiles', $nb);
     }
 
+    public static function getSectorizedDetails(): array
+    {
+        return ['admin', self::class];
+    }
 
     public function defineTabs($options = [])
     {
-
         $ong = [];
         $this->addDefaultFormTab($ong);
         $this->addImpactTab($ong, $options);
@@ -142,26 +150,26 @@ class Profile extends CommonDBTM
         return $ong;
     }
 
-
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0)
     {
-
         if (!$withtemplate) {
-            switch ($item->getType()) {
-                case __CLASS__:
-                    if ($item->fields['interface'] == 'helpdesk') {
-                        $ong[3] = __('Assistance'); // Helpdesk
-                        $ong[4] = __('Life cycles');
-                        $ong[6] = __('Tools');
-                        $ong[8] = __('Setup');
+            switch ($item::class) {
+                case self::class:
+                    if ($item->fields['interface'] === 'helpdesk') {
+                        $ong[3] = self::createTabEntry(__('Assistance'), 0, $item::class, 'ti ti-headset'); // Helpdesk
+                        $ong[4] = self::createTabEntry(__('Life cycles'));
+                        $ong[6] = self::createTabEntry(__('Tools'), 0, $item::class, 'ti ti-briefcase');
+                        $ong[8] = self::createTabEntry(__('Setup'), 0, $item::class, 'ti ti-cog');
+                        $ong[9] = self::createTabEntry(__('Security'), 0, $item::class, 'ti ti-shield-lock');
                     } else {
-                        $ong[2] = _n('Asset', 'Assets', Session::getPluralNumber());
-                        $ong[3] = __('Assistance');
-                        $ong[4] = __('Life cycles');
-                        $ong[5] = __('Management');
-                        $ong[6] = __('Tools');
-                        $ong[7] = __('Administration');
-                        $ong[8] = __('Setup');
+                        $ong[2] = self::createTabEntry(_n('Asset', 'Assets', Session::getPluralNumber()), 0, $item::class, 'ti ti-package');
+                        $ong[3] = self::createTabEntry(__('Assistance'), 0, $item::class, 'ti ti-headset');
+                        $ong[4] = self::createTabEntry(__('Life cycles'));
+                        $ong[5] = self::createTabEntry(__('Management'), 0, $item::class, 'ti ti-wallet');
+                        $ong[6] = self::createTabEntry(__('Tools'), 0, $item::class, 'ti ti-briefcase');
+                        $ong[7] = self::createTabEntry(__('Administration'), 0, $item::class, 'ti ti-shield-check');
+                        $ong[8] = self::createTabEntry(__('Setup'), 0, $item::class, 'ti ti-settings');
+                        $ong[9] = self::createTabEntry(__('Security'), 0, $item::class, 'ti ti-shield-lock');
                     }
                     return $ong;
             }
@@ -169,11 +177,9 @@ class Profile extends CommonDBTM
         return '';
     }
 
-
     public static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0)
     {
-
-        if ($item->getType() == __CLASS__) {
+        if ($item::class === self::class) {
             $item->cleanProfile();
             switch ($tabnum) {
                 case 2:
@@ -181,7 +187,7 @@ class Profile extends CommonDBTM
                     break;
 
                 case 3:
-                    if ($item->fields['interface'] == 'helpdesk') {
+                    if ($item->fields['interface'] === 'helpdesk') {
                         $item->showFormTrackingHelpdesk();
                     } else {
                         $item->showFormTracking();
@@ -189,7 +195,7 @@ class Profile extends CommonDBTM
                     break;
 
                 case 4:
-                    if ($item->fields['interface'] == 'helpdesk') {
+                    if ($item->fields['interface'] === 'helpdesk') {
                         $item->showFormLifeCycleHelpdesk();
                     } else {
                         $item->showFormLifeCycle();
@@ -201,7 +207,7 @@ class Profile extends CommonDBTM
                     break;
 
                 case 6:
-                    if ($item->fields['interface'] == 'helpdesk') {
+                    if ($item->fields['interface'] === 'helpdesk') {
                         $item->showFormToolsHelpdesk();
                     } else {
                         $item->showFormTools();
@@ -213,30 +219,44 @@ class Profile extends CommonDBTM
                     break;
 
                 case 8:
-                    if ($item->fields['interface'] == 'helpdesk') {
+                    if ($item->fields['interface'] === 'helpdesk') {
                         $item->showFormSetupHelpdesk();
                     } else {
                         $item->showFormSetup();
                     }
+                    break;
+
+                case 9:
+                    $item->showFormSecurity();
                     break;
             }
         }
         return true;
     }
 
-
-    public function post_updateItem($history = 1)
+    public function post_updateItem($history = true)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         if (count($this->profileRight) > 0) {
+            // Delegate custom assets specific rights handling to `AssetDefinitionManager`.
+            $definitions = AssetDefinitionManager::getInstance()->getDefinitions();
+            foreach ($definitions as $definition) {
+                $asset_rightname = $definition->getCustomObjectRightname();
+                if (array_key_exists($asset_rightname, $this->profileRight)) {
+                    $definition->setProfileRights($this->getID(), $this->profileRight[$asset_rightname]);
+                    unset($this->profileRight[$asset_rightname]);
+                }
+            }
+
             ProfileRight::updateProfileRights($this->getID(), $this->profileRight);
             $this->profileRight = null;
         }
 
-        if (in_array('is_default', $this->updates) && ($this->input["is_default"] == 1)) {
+        if (in_array('is_default', $this->updates, true) && ((int) $this->input["is_default"] === 1)) {
             $DB->update(
-                $this->getTable(),
+                static::getTable(),
                 [
                     'is_default' => 0
                 ],
@@ -249,13 +269,13 @@ class Profile extends CommonDBTM
        // To avoid log out and login when rights change (very useful in debug mode)
         if (
             isset($_SESSION['glpiactiveprofile']['id'])
-            && $_SESSION['glpiactiveprofile']['id'] == $this->input['id']
+            && $_SESSION['glpiactiveprofile']['id'] === $this->input['id']
         ) {
-            if (in_array('helpdesk_item_type', $this->updates)) {
+            if (in_array('helpdesk_item_type', $this->updates, true)) {
                 $_SESSION['glpiactiveprofile']['helpdesk_item_type'] = importArrayFromDB($this->input['helpdesk_item_type']);
             }
 
-            if (in_array('managed_domainrecordtypes', $this->updates)) {
+            if (in_array('managed_domainrecordtypes', $this->updates, true)) {
                 $_SESSION['glpiactiveprofile']['managed_domainrecordtypes'] = importArrayFromDB($this->input['managed_domainrecordtypes']);
             }
 
@@ -263,18 +283,18 @@ class Profile extends CommonDBTM
         }
     }
 
-
     public function post_addItem()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $rights = ProfileRight::getAllPossibleRights();
         ProfileRight::updateProfileRights($this->fields['id'], $rights);
         $this->profileRight = null;
 
-        if (isset($this->fields['is_default']) && ($this->fields["is_default"] == 1)) {
+        if (isset($this->fields['is_default']) && ((int) $this->fields["is_default"] === 1)) {
             $DB->update(
-                $this->getTable(),
+                static::getTable(),
                 [
                     'is_default' => 0
                 ],
@@ -285,10 +305,8 @@ class Profile extends CommonDBTM
         }
     }
 
-
     public function cleanDBonPurge()
     {
-
         $this->deleteChildrenAndRelationsFromDb(
             [
                 KnowbaseItem_Profile::class,
@@ -300,20 +318,24 @@ class Profile extends CommonDBTM
         );
 
         Rule::cleanForItemAction($this);
-       // PROFILES and UNIQUE_PROFILE in RuleMailcollector
+        // PROFILES and UNIQUE_PROFILE in RuleMailcollector
         Rule::cleanForItemCriteria($this, 'PROFILES');
         Rule::cleanForItemCriteria($this, 'UNIQUE_PROFILE');
     }
 
+    public function getCloneRelations(): array
+    {
+        return [
+            ProfileRight::class
+        ];
+    }
 
     public function prepareInputForUpdate($input)
     {
+        /** @var array $CFG_GLPI */
+        global $CFG_GLPI;
 
-        if (isset($input["_helpdesk_item_types"])) {
-            if ((!isset($input["helpdesk_item_type"])) || (!is_array($input["helpdesk_item_type"]))) {
-                $input["helpdesk_item_type"] = [];
-            }
-           // Linear_HIT: $input["helpdesk_item_type"] = array_keys($input["helpdesk_item_type"]
+        if (isset($input["helpdesk_item_type"])) {
             $input["helpdesk_item_type"] = exportArrayToDB($input["helpdesk_item_type"]);
         }
 
@@ -399,6 +421,52 @@ class Profile extends CommonDBTM
             }
         }
 
+
+        // Check if profile edit right was removed
+        // `$this->fields['profile']` will not be present if the `profile` right is not present in DB for the current profile
+        if (array_key_exists('profile', $this->fields)) {
+            $can_edit_profile = ($this->fields['profile'] & UPDATE) === UPDATE;
+            $updated_value = $input['_profile'][UPDATE . "_0"] ?? null;
+            $update_profiles_right_was_removed = $updated_value !== null && !(bool) $updated_value;
+            if (
+                $can_edit_profile
+                && $update_profiles_right_was_removed
+                && $this->isLastSuperAdminProfile()
+            ) {
+                Session::addMessageAfterRedirect(
+                    __s("Can't remove update right on this profile as it is the only remaining profile with this right."),
+                    false,
+                    ERROR
+                );
+                unset($input['_profile']);
+            }
+        }
+
+        if (isset($input['interface']) && $input['interface'] === 'helpdesk' && $this->isLastSuperAdminProfile()) {
+            Session::addMessageAfterRedirect(
+                __s("Can't change the interface on this profile as it is the only remaining profile with rights to modify profiles with this interface."),
+                false,
+                ERROR
+            );
+            unset($input['interface']);
+        }
+
+        // If the profile is used as the "Profile to be used when locking items",
+        // it can't be set to the "helpdesk" interface.
+        if (
+            isset($input['interface'])
+            && $input['interface'] === "helpdesk"
+            && $this->fields['id'] === (int) $CFG_GLPI['lock_lockprofile_id']
+        ) {
+            Session::addMessageAfterRedirect(
+                __s("This profile can't be moved to the simplified interface as it is used for locking items."),
+                false,
+                ERROR
+            );
+            unset($input['interface']);
+        }
+
+        // KEEP AT THE END
         $this->profileRight = [];
         foreach (array_keys(ProfileRight::getAllPossibleRights()) as $right) {
             if (isset($input['_' . $right])) {
@@ -415,33 +483,14 @@ class Profile extends CommonDBTM
                     }
                 }
                // Update rights only if changed
-                if (!isset($this->fields[$right]) || ($this->fields[$right] != $newvalue)) {
+                if (!isset($this->fields[$right]) || ($this->fields[$right] !== $newvalue)) {
                     $this->profileRight[$right] = $newvalue;
                 }
                 unset($input['_' . $right]);
             }
         }
-
-       // check if right if the last write profile on Profile object
-        if (
-            ($this->fields['profile'] & UPDATE)
-            && isset($input['profile']) && !($input['profile'] & UPDATE)
-            && (countElementsInTable(
-                "glpi_profilerights",
-                ['name' => 'profile', 'rights' => ['&',  UPDATE]]
-            ))
-        ) {
-            Session::addMessageAfterRedirect(
-                __("This profile is the last with write rights on profiles"),
-                false,
-                ERROR
-            );
-            Session::addMessageAfterRedirect(__("Deletion refused"), false, ERROR);
-            unset($input["profile"]);
-        }
         return $input;
     }
-
 
     /**
      * check right before delete
@@ -460,20 +509,18 @@ class Profile extends CommonDBTM
             ))
         ) {
             Session::addMessageAfterRedirect(
-                __("This profile is the last with write rights on profiles"),
+                __s("This profile is the last with write rights on profiles"),
                 false,
                 ERROR
             );
-            Session::addMessageAfterRedirect(__("Deletion refused"), false, ERROR);
+            Session::addMessageAfterRedirect(__s("Deletion refused"), false, ERROR);
             return false;
         }
         return true;
     }
 
-
     public function prepareInputForAdd($input)
     {
-
         if (isset($input["helpdesk_item_type"])) {
             $input["helpdesk_item_type"] = exportArrayToDB($input["helpdesk_item_type"]);
         }
@@ -491,8 +538,8 @@ class Profile extends CommonDBTM
         }
 
        // Set default values, only needed for helpdesk
-        $interface = isset($input['interface']) ? $input['interface'] : "";
-        if ($interface == "helpdesk" && !isset($input["_cycle_ticket"])) {
+        $interface = $input['interface'] ?? "";
+        if ($interface === "helpdesk" && !isset($input["_cycle_ticket"])) {
             $tab   = array_keys(Ticket::getAllStatusArray());
             $cycle = [];
             foreach ($tab as $from) {
@@ -505,28 +552,44 @@ class Profile extends CommonDBTM
             $input["ticket_status"] = exportArrayToDB($cycle);
         }
 
+        $other_array_fields = ['ticket_status', 'problem_status', 'change_status'];
+        foreach ($other_array_fields as $array_field) {
+            if (isset($input[$array_field]) && is_array($input[$array_field])) {
+                $input[$array_field] = exportArrayToDB($input[$array_field]);
+            }
+        }
+
         return $input;
     }
 
+    public function prepareInputForClone($input)
+    {
+        $input_arrays = ['helpdesk_item_type', 'managed_domainrecordtypes', 'ticket_status', 'problem_status', 'change_status'];
+        foreach ($input_arrays as $array_field) {
+            if (isset($input[$array_field])) {
+                $input[$array_field] = importArrayFromDB($input[$array_field]);
+            }
+        }
+        return $input;
+    }
 
     /**
      * Unset unused rights for helpdesk
      **/
     public function cleanProfile()
     {
-
-        if (isset($this->fields['interface']) && $this->fields["interface"] == "helpdesk") {
+        if (isset($this->fields['interface']) && $this->fields["interface"] === "helpdesk") {
             foreach ($this->fields as $key => $val) {
                 if (
-                    !in_array($key, self::$common_fields)
-                    && !in_array($key, self::$helpdesk_rights)
+                    !in_array($key, self::$common_fields, true)
+                    && !in_array($key, self::$helpdesk_rights, true)
                 ) {
                     unset($this->fields[$key]);
                 }
             }
         }
 
-       // decode array
+        // decode array
         if (
             isset($this->fields["helpdesk_item_type"])
             && !is_array($this->fields["helpdesk_item_type"])
@@ -534,7 +597,7 @@ class Profile extends CommonDBTM
             $this->fields["helpdesk_item_type"] = importArrayFromDB($this->fields["helpdesk_item_type"]);
         }
 
-       // Empty/NULL case
+        // Empty/NULL case
         if (
             !isset($this->fields["helpdesk_item_type"])
             || !is_array($this->fields["helpdesk_item_type"])
@@ -542,7 +605,7 @@ class Profile extends CommonDBTM
             $this->fields["helpdesk_item_type"] = [];
         }
 
-       // decode array
+        // decode array
         if (
             isset($this->fields["managed_domainrecordtypes"])
             && !is_array($this->fields["managed_domainrecordtypes"])
@@ -550,7 +613,7 @@ class Profile extends CommonDBTM
             $this->fields["managed_domainrecordtypes"] = importArrayFromDB($this->fields["managed_domainrecordtypes"]);
         }
 
-       // Empty/NULL case
+        // Empty/NULL case
         if (
             !isset($this->fields["managed_domainrecordtypes"])
             || !is_array($this->fields["managed_domainrecordtypes"])
@@ -571,7 +634,6 @@ class Profile extends CommonDBTM
         }
     }
 
-
     /**
      * Get SQL restrict criteria to determine profiles with less rights than the active one
      *
@@ -581,33 +643,35 @@ class Profile extends CommonDBTM
      **/
     public static function getUnderActiveProfileRestrictCriteria()
     {
+        /** @var DBmysql $DB */
+        global $DB;
 
-       // Not logged -> no profile to see
+        // Not logged -> no profile to see
         if (!isset($_SESSION['glpiactiveprofile'])) {
             return [0];
         }
 
-       // Profile right : may modify profile so can attach all profile
-        if (Profile::canCreate()) {
+        // Profile right : may modify profile so can attach all profile
+        if (self::canCreate()) {
             return [1];
         }
 
         $criteria = ['glpi_profiles.interface' => Session::getCurrentInterface()];
 
-       // First, get all possible rights
+        // First, get all possible rights
         $right_subqueries = [];
         foreach (ProfileRight::getAllPossibleRights() as $key => $default) {
-            $val = isset($_SESSION['glpiactiveprofile'][$key]) ? $_SESSION['glpiactiveprofile'][$key] : 0;
+            $val = $_SESSION['glpiactiveprofile'][$key] ?? 0;
 
             if (
                 !is_array($val) // Do not include entities field added by login
-                && (Session::getCurrentInterface() == 'central'
-                 || in_array($key, self::$helpdesk_rights))
+                && (Session::getCurrentInterface() === 'central'
+                 || in_array($key, self::$helpdesk_rights, true))
             ) {
                 $right_subqueries[] = [
                     'glpi_profilerights.name'     => $key,
                     'RAW'                         => [
-                        '(' . DBmysql::quoteName('glpi_profilerights.rights') . ' | ' . DBmysql::quoteValue($val) . ')' => $val
+                        '(' . $DB::quoteName('glpi_profilerights.rights') . ' | ' . $DB::quoteValue($val) . ')' => $val
                     ]
                 ];
             }
@@ -617,13 +681,13 @@ class Profile extends CommonDBTM
             'FROM'   => 'glpi_profilerights',
             'COUNT'  => 'cpt',
             'WHERE'  => [
-                'glpi_profilerights.profiles_id' => new \QueryExpression(\DBmysql::quoteName('glpi_profiles.id')),
+                'glpi_profilerights.profiles_id' => new QueryExpression($DB::quoteName('glpi_profiles.id')),
                 'OR'                             => $right_subqueries
             ]
         ]);
-        $criteria[] = new \QueryExpression(count($right_subqueries) . " = " . $sub_query->getQuery());
+        $criteria[] = new QueryExpression(count($right_subqueries) . " = " . $sub_query->getQuery());
 
-        if (Session::getCurrentInterface() == 'central') {
+        if (Session::getCurrentInterface() === 'central') {
             return [
                 'OR'  => [
                     'glpi_profiles.interface' => 'helpdesk',
@@ -635,25 +699,25 @@ class Profile extends CommonDBTM
         return $criteria;
     }
 
-
     /**
      * Is the current user have more right than all profiles in parameters
      *
-     * @param $IDs array of profile ID to test
+     * @param array<int> $IDs array of profile ID to test
      *
      * @return boolean true if have more right
      **/
     public static function currentUserHaveMoreRightThan($IDs = [])
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         if (Session::isCron()) {
             return true;
         }
-        if (count($IDs) == 0) {
+        if (count($IDs) === 0) {
            // Check all profiles (means more right than all possible profiles)
             return (countElementsInTable('glpi_profiles')
-                     == countElementsInTable(
+                     === countElementsInTable(
                          'glpi_profiles',
                          self::getUnderActiveProfileRestrictCriteria()
                      ));
@@ -661,6 +725,7 @@ class Profile extends CommonDBTM
         $under_profiles = [];
 
         $iterator = $DB->request([
+            'SELECT' => ['id'],
             'FROM'   => self::getTable(),
             'WHERE'  => self::getUnderActiveProfileRestrictCriteria()
         ]);
@@ -677,22 +742,19 @@ class Profile extends CommonDBTM
         return true;
     }
 
-
     public function showLegend()
     {
-
         echo "<div class='spaced'>";
         echo "<table class='tab_cadre_fixe'>";
         echo "<tr class='tab_bg_2'><td width='70' style='text-decoration:underline' class='b'>";
-        echo __('Caption') . "</td>";
+        echo __s('Caption') . "</td>";
         echo "<td class='tab_bg_4' width='15' style='border:1px solid black'></td>";
-        echo "<td class='b'>" . __('Global right') . "</td></tr>\n";
+        echo "<td class='b'>" . __s('Global right') . "</td></tr>";
         echo "<tr class='tab_bg_2'><td></td>";
         echo "<td class='tab_bg_2' width='15' style='border:1px solid black'></td>";
-        echo "<td class='b'>" . __('Entity right') . "</td></tr>";
-        echo "</table></div>\n";
+        echo "<td class='b'>" . __s('Entity right') . "</td></tr>";
+        echo "</table></div>";
     }
-
 
     public function post_getEmpty()
     {
@@ -702,7 +764,6 @@ class Profile extends CommonDBTM
         $this->fields = array_merge($this->fields, ProfileRight::getAllPossibleRights());
     }
 
-
     public function post_getFromDB()
     {
         $this->fields = array_merge($this->fields, ProfileRight::getProfileRights($this->getID()));
@@ -711,16 +772,10 @@ class Profile extends CommonDBTM
     /**
      * Print the profile form headers
      *
-     * @param $ID        integer : Id of the item to print
-     * @param $options   array of possible options
-     *     - target filename : where to go when done.
-     *     - withtemplate boolean : template or basic item
-     *
-     * @return boolean item found
+     * @inheritDoc
      **/
     public function showForm($ID, array $options = [])
     {
-
         $onfocus = "";
         $new     = false;
         $rowspan = 4;
@@ -738,45 +793,408 @@ class Profile extends CommonDBTM
 
         $this->showFormHeader($options);
 
-        echo "<tr class='tab_bg_1'><td>" . __('Name') . "</td>";
+        echo "<tr class='tab_bg_1'><td>" . __s('Name') . "</td>";
         echo "<td><input type='text' name='name' class='form-control' value=\"" . $this->fields["name"] . "\" $onfocus></td>";
-        echo "<td rowspan='$rowspan' class='middle right'>" . __('Comments') . "</td>";
+        echo "<td rowspan='$rowspan' class='middle right'>" . __s('Comments') . "</td>";
         echo "<td class='center middle' rowspan='$rowspan'>";
         echo "<textarea class='form-control' rows='4' name='comment' class='form-control'>" . $this->fields["comment"] . "</textarea>";
         echo "</td></tr>";
 
-        echo "<tr class='tab_bg_1'><td>" . __('Default profile') . "</td><td>";
+        echo "<tr class='tab_bg_1'><td>" . __s('Default profile') . "</td><td>";
         Html::showCheckbox(['name'    => 'is_default',
             'checked' => $this->fields['is_default']
         ]);
-        echo "</td></tr>\n";
+        echo "</td></tr>";
 
-        echo "<tr class='tab_bg_1'><td>" . __("Profile's interface") . "</td>";
+        echo "<tr class='tab_bg_1'><td>" . __s("Profile's interface") . "</td>";
         echo "<td>";
         Dropdown::showFromArray(
             'interface',
             self::getInterfaces(),
-            ['value' => $this->fields["interface"]]
+            [
+                'value' => $this->fields["interface"],
+                'readonly' => $this->isLastSuperAdminProfile() && $this->fields['interface'] == 'central'
+            ]
         );
-        echo "</td></tr>\n";
+        echo "</td></tr>";
 
-        echo "<tr class='tab_bg_1'><td>" . __('Update password') . "</td><td>";
+        echo "<tr class='tab_bg_1'><td>" . __s('Update own password') . "</td><td>";
         Html::showCheckbox(['name'    => '_password_update',
             'checked' => $this->fields['password_update']
         ]);
-        echo "</td></tr>\n";
+        echo "</td></tr>";
 
-        echo "<tr class='tab_bg_1'><td>" . __('Ticket creation form on login') . "</td><td>";
+        echo "<tr class='tab_bg_1'><td>" . __s('Ticket creation form on login') . "</td><td>";
         Html::showCheckbox(['name'    => 'create_ticket_on_login',
             'checked' => $this->fields['create_ticket_on_login']
         ]);
-        echo "</td></tr>\n";
+        echo "</td></tr>";
 
         $this->showFormButtons($options);
 
         return true;
     }
 
+    /**
+     * Get all rights to display for a specific form and interface.
+     *
+     * This is only used for GLPI core rights and not rights added by plugins.
+     *
+     * @param string $form The tab/form name
+     * @phpstan-param non-empty-string $form
+     * @param string $interface The interface name
+     * @phpstan-param 'all'|'central'|'helpdesk' $interface
+     * @return array
+     * @phpstan-type RightDefinition = array{rights: array{}, label: string, field: string, scope: string}
+     * @phpstan-return $interface == 'all' ? array<string, array<string, array<string, RightDefinition[]>>> : ($form == 'all' ? array<string, array<string, RightDefinition[]>> : ($group == 'all' ? array<string, RightDefinition[]> : RightDefinition[]))
+     * @internal BC not guaranteed. Only public so it can be used in tests to ensure search options are made for all rights.
+     */
+    public static function getRightsForForm(string $interface = 'all', string $form = 'all', string $group = 'all'): array
+    {
+        /**
+         * Helper function to streamline rights definition
+         * @param class-string<CommonDBTM>|null $itemtype
+         * @param string $interface
+         * @param array $options
+         * @return array
+         */
+        $fn_get_rights = static function (?string $itemtype, string $interface, array $options = []) {
+            $options = array_replace([
+                'field' => null,
+                'label' => null,
+                'rights' => null,
+                'scope' => 'entity'
+            ], $options);
+
+            return [
+                'rights' => $options['rights'] ?? Profile::getRightsFor($itemtype, $interface),
+                'label'  => $options['label'] ?? $itemtype::getTypeName(Session::getPluralNumber()),
+                'field'  => $options['field'] ?? $itemtype::$rightname,
+                'scope' => $options['scope']
+            ];
+        };
+
+        static $all_rights = null;
+
+        if ($all_rights === null) {
+            $dropdown_rights = (new Profile())->getRights();
+            unset($dropdown_rights[DELETE], $dropdown_rights[UNLOCK]);
+
+            $all_rights = [
+                'central' => [
+                    'tracking' => [
+                        'itilobjects' => [
+                            $fn_get_rights(TicketTemplate::class, 'central', [
+                                'label' => _n('Template', 'Templates', Session::getPluralNumber())
+                            ]),
+                            $fn_get_rights(PendingReason::class, 'central'),
+                        ],
+                        'tickets' => [
+                            $fn_get_rights(Ticket::class, 'central'),
+                            $fn_get_rights(TicketCost::class, 'central'),
+                            $fn_get_rights(TicketRecurrent::class, 'central'),
+                        ],
+                        'followups_tasks' => [
+                            $fn_get_rights(ITILFollowup::class, 'central'),
+                            $fn_get_rights(TicketTask::class, 'central'),
+                        ],
+                        'validations' => [
+                            $fn_get_rights(TicketValidation::class, 'central'),
+                        ],
+                        'visibility' => [
+                            $fn_get_rights(Stat::class, 'central'),
+                            $fn_get_rights(Planning::class, 'central'),
+                        ],
+                        'planning' => [
+                            $fn_get_rights(PlanningExternalEvent::class, 'central'),
+                        ],
+                        'problems' => [
+                            $fn_get_rights(Problem::class, 'central'),
+                        ],
+                        'changes' => [
+                            $fn_get_rights(Change::class, 'central'),
+                            $fn_get_rights(ChangeValidation::class, 'central'),
+                            $fn_get_rights(RecurrentChange::class, 'central'),
+                        ],
+                    ],
+                    'tools' => [
+                        'general' => [
+                            $fn_get_rights(Reminder::class, 'central', [
+                                'label' => _n('Public reminder', 'Public reminders', Session::getPluralNumber())
+                            ]),
+                            $fn_get_rights(RSSFeed::class, 'central', [
+                                'label' => _n('Public RSS feed', 'Public RSS feeds', Session::getPluralNumber())
+                            ]),
+                            $fn_get_rights(SavedSearch::class, 'central', [
+                                'label' => _n('Public saved search', 'Public saved searches', Session::getPluralNumber())
+                            ]),
+                            $fn_get_rights(Report::class, 'central'),
+                            $fn_get_rights(KnowbaseItem::class, 'central'),
+                            $fn_get_rights(ReservationItem::class, 'central'),
+                        ],
+                        'projects' => [
+                            $fn_get_rights(Project::class, 'central'),
+                            $fn_get_rights(ProjectTask::class, 'central'),
+                        ]
+                    ],
+                    'assets' => [
+                        'general' => [
+                            $fn_get_rights(Computer::class, 'central'),
+                            $fn_get_rights(Monitor::class, 'central'),
+                            $fn_get_rights(Software::class, 'central'),
+                            $fn_get_rights(NetworkEquipment::class, 'central'),
+                            $fn_get_rights(Printer::class, 'central'),
+                            $fn_get_rights(Cartridge::class, 'central'),
+                            $fn_get_rights(Consumable::class, 'central'),
+                            $fn_get_rights(Phone::class, 'central'),
+                            $fn_get_rights(Peripheral::class, 'central'),
+                            $fn_get_rights(NetworkName::class, 'central', [
+                                'label' => __('Internet')
+                            ]),
+                            $fn_get_rights(DeviceSimcard::class, 'central', [
+                                'label' => __('Simcard PIN/PUK'),
+                                'field' => 'devicesimcard_pinpuk'
+                            ]),
+                        ],
+                    ],
+                    'management' => [
+                        'general' => [
+                            $fn_get_rights(SoftwareLicense::class, 'central'),
+                            $fn_get_rights(Contact::class, 'central', [
+                                'label' => _n('Contact', 'Contacts', Session::getPluralNumber()) . " / " .
+                                    _n('Supplier', 'Suppliers', Session::getPluralNumber())
+                            ]),
+                            $fn_get_rights(Document::class, 'central'),
+                            $fn_get_rights(Contract::class, 'central'),
+                            $fn_get_rights(Infocom::class, 'central'),
+                            $fn_get_rights(Budget::class, 'central'),
+                            $fn_get_rights(Line::class, 'central'),
+                            $fn_get_rights(Certificate::class, 'central'),
+                            $fn_get_rights(Datacenter::class, 'central'),
+                            $fn_get_rights(Cluster::class, 'central'),
+                            $fn_get_rights(Domain::class, 'central'),
+                            $fn_get_rights(Appliance::class, 'central'),
+                            $fn_get_rights(DatabaseInstance::class, 'central'),
+                            $fn_get_rights(Cable::class, 'central'),
+                        ],
+                    ],
+                    'admin' => [
+                        'general' => [
+                            $fn_get_rights(User::class, 'central'),
+                            $fn_get_rights(Entity::class, 'central', ['scope' => 'global']),
+                            $fn_get_rights(Group::class, 'central', ['scope' => 'global']),
+                            $fn_get_rights(__CLASS__, 'central', ['scope' => 'global']),
+                            $fn_get_rights(QueuedNotification::class, 'central', ['scope' => 'global']),
+                            $fn_get_rights(Log::class, 'central', ['scope' => 'global']),
+                            $fn_get_rights(Event::class, 'central', [
+                                'scope' => 'global',
+                                'label' => __('System logs')
+                            ]),
+                            $fn_get_rights(Form::class, 'central'),
+                        ],
+                        'inventory' => [
+                            $fn_get_rights(\Glpi\Inventory\Conf::class, 'central', [
+                                'label' => __('Inventory'),
+                                'field' => 'inventory',
+                                'scope' => 'global'
+                            ]),
+                            $fn_get_rights(Lockedfield::class, 'central', [
+                                'rights' => [
+                                    CREATE => __('Create'), // For READ / CREATE
+                                    UPDATE => __('Update'), //for CREATE / PURGE global lock
+                                ],
+                                'scope' => 'global'
+                            ]),
+                            $fn_get_rights(SNMPCredential::class, 'central', ['scope' => 'global']),
+                            $fn_get_rights(RefusedEquipment::class, 'central', [
+                                'rights' => [
+                                    READ  => __('Read'),
+                                    UPDATE  => __('Update'),
+                                    PURGE   => [
+                                        'short' => __('Purge'),
+                                        'long'  => _x('button', 'Delete permanently')
+                                    ]
+                                ],
+                                'scope' => 'global'
+                            ]),
+                            $fn_get_rights(Unmanaged::class, 'central', [
+                                'rights' => [
+                                    READ  => __('Read'),
+                                    UPDATE  => __('Update'),
+                                    DELETE => [
+                                        'short' => __('Delete'),
+                                        'long'  => _x('button', 'Put in trashbin')
+                                    ],
+                                    PURGE   => [
+                                        'short' => __('Purge'),
+                                        'long'  => _x('button', 'Delete permanently')
+                                    ]
+                                ],
+                                'scope' => 'global'
+                            ]),
+                            $fn_get_rights(Agent::class, 'central', [
+                                'rights' => [
+                                    READ  => __('Read'),
+                                    UPDATE  => __('Update'),
+                                    PURGE   => [
+                                        'short' => __('Purge'),
+                                        'long'  => _x('button', 'Delete permanently')
+                                    ]
+                                ],
+                                'scope' => 'global'
+                            ]),
+                        ],
+                        'rules' => [
+                            $fn_get_rights(RuleRight::class, 'central', [
+                                'label'     => __('Authorizations assignment rules'),
+                                'scope'     => 'global'
+                            ]),
+                            $fn_get_rights(RuleImportAsset::class, 'central', [
+                                'label'     => __('Rules for assigning a computer to an entity'),
+                                'scope'     => 'global'
+                            ]),
+                            $fn_get_rights(RuleLocation::class, 'central', [
+                                'label'     => __('Rules for assigning a computer to a location'),
+                                'scope'     => 'global'
+                            ]),
+                            $fn_get_rights(RuleMailCollector::class, 'central', [
+                                'label'     => __('Rules for assigning a ticket created through a mails receiver'),
+                                'scope'     => 'global'
+                            ]),
+                            $fn_get_rights(RuleSoftwareCategory::class, 'central', [
+                                'label'     => __('Rules for assigning a category to a software'),
+                                'scope'     => 'global'
+                            ]),
+                            $fn_get_rights(RuleTicket::class, 'central', [
+                                'label'     => __('Business rules for tickets (entity)'),
+                            ]),
+                            $fn_get_rights(RuleChange::class, 'central', [
+                                'label'     => __('Business rules for changes (entity)'),
+                            ]),
+                            $fn_get_rights(RuleProblem::class, 'central', [
+                                'label'     => __('Business rules for problems (entity)'),
+                            ]),
+                            $fn_get_rights(RuleAsset::class, 'central', [
+                                'label'     => __('Business rules for assets'),
+                            ]),
+                            $fn_get_rights(Transfer::class, 'central', [
+                                'label'     => __('Transfer'),
+                                'scope'     => 'global'
+                            ]),
+                        ],
+                        'dictionaries' => [
+                            $fn_get_rights(RuleDictionnaryDropdown::class, 'central', [
+                                'label'     => __('Dropdowns dictionary'),
+                                'scope'     => 'global'
+                            ]),
+                            $fn_get_rights(RuleDictionnarySoftware::class, 'central', [
+                                'label'     => __('Software dictionary'),
+                                'scope'     => 'global'
+                            ]),
+                            $fn_get_rights(RuleDictionnaryPrinter::class, 'central', [
+                                'label'     => __('Printers dictionary'),
+                                'scope'     => 'global'
+                            ]),
+                        ]
+                    ],
+                    'setup' => [
+                        'general' => [
+                            $fn_get_rights(Config::class, 'central', ['scope' => 'entity']),
+                            $fn_get_rights(null, 'central', [
+                                'rights'  => [
+                                    READ    => __('Read'),
+                                    UPDATE  => __('Update')
+                                ],
+                                'label'  => __('Personalization'),
+                                'field'  => 'personalization',
+                                'scope'     => 'entity'
+                            ]),
+                            $fn_get_rights(\Glpi\Dashboard\Grid::class, 'central', [
+                                'label'     => __('All dashboards'),
+                                'field'     => 'dashboard',
+                                'scope'     => 'entity'
+                            ]),
+                            $fn_get_rights(DisplayPreference::class, 'central', ['scope' => 'entity']),
+                            $fn_get_rights(Item_Devices::class, 'central', [
+                                'label'     => _n('Component', 'Components', Session::getPluralNumber()),
+                                'field'     => 'device',
+                            ]),
+                            $fn_get_rights(null, 'central', [
+                                'rights'    => $dropdown_rights,
+                                'label'     => _n('Global dropdown', 'Global dropdowns', Session::getPluralNumber()),
+                                'field'     => 'dropdown',
+                                'scope'     => 'global'
+                            ]),
+                            $fn_get_rights(Location::class, 'central'),
+                            $fn_get_rights(ITILCategory::class, 'central'),
+                            $fn_get_rights(KnowbaseItemCategory::class, 'central'),
+                            $fn_get_rights(TaskCategory::class, 'central'),
+                            $fn_get_rights(State::class, 'central'),
+                            $fn_get_rights(ITILFollowupTemplate::class, 'central'),
+                            $fn_get_rights(SolutionTemplate::class, 'central'),
+                            $fn_get_rights(ITILValidationTemplate::class, 'central'),
+                            $fn_get_rights(Calendar::class, 'central'),
+                            $fn_get_rights(DocumentType::class, 'central'),
+                            $fn_get_rights(Link::class, 'central'),
+                            $fn_get_rights(Notification::class, 'central'),
+                            $fn_get_rights(SLM::class, 'central', ['label' => __('SLM')]),
+                            $fn_get_rights(LineOperator::class, 'central'),
+                            $fn_get_rights(OAuthClient::class, 'central'),
+                            $fn_get_rights(DefaultFilter::class, 'central'),
+                        ],
+                    ]
+                ],
+                'helpdesk' => [
+                    'tracking' => [
+                        'general' => [
+                            $fn_get_rights(Ticket::class, 'helpdesk'),
+                            $fn_get_rights(ITILFollowup::class, 'helpdesk'),
+                            $fn_get_rights(TicketTask::class, 'helpdesk'),
+                            $fn_get_rights(TicketValidation::class, 'helpdesk'),
+                        ],
+                    ],
+                    'tools' => [
+                        'general' => [
+                            $fn_get_rights(KnowbaseItem::class, 'helpdesk'),
+                            $fn_get_rights(ReservationItem::class, 'helpdesk'),
+                            $fn_get_rights(Reminder::class, 'helpdesk'),
+                            $fn_get_rights(RSSFeed::class, 'helpdesk'),
+                        ],
+                    ],
+                    'setup' => [
+                        'general' => [
+                            $fn_get_rights(null, 'helpdesk', [
+                                'rights'  => [
+                                    READ    => __('Read'),
+                                    UPDATE  => __('Update')
+                                ],
+                                'label'  => __('Personalization'),
+                                'field'  => 'personalization',
+                            ]),
+                        ],
+                    ]
+                ]
+            ];
+
+            // Add rights for custom assets
+            $definitions = AssetDefinitionManager::getInstance()->getDefinitions(only_active: true);
+            foreach ($definitions as $definition) {
+                $all_rights['central']['assets']['custom_assets'][] = $fn_get_rights($definition->getCustomObjectClassName(), 'central');
+            }
+        }
+
+        $result = $all_rights;
+        if ($interface !== 'all') {
+            $result = $all_rights[$interface] ?? [];
+        }
+        if ($form !== 'all') {
+            $result = $all_rights[$interface][$form] ?? [];
+        }
+        if ($group !== 'all') {
+            $result = $all_rights[$interface][$form][$group] ?? [];
+        }
+        return $result;
+    }
 
     /**
      * Print the helpdesk right form for the current profile
@@ -798,35 +1216,17 @@ class Profile extends CommonDBTM
             'default_class' => 'tab_bg_2'
         ];
 
-        $rights = [['rights'     => Profile::getRightsFor('Ticket', 'helpdesk'),
-            'label'      => _n('Ticket', 'Tickets', Session::getPluralNumber()),
-            'field'      => 'ticket'
-        ],
-            ['rights'     => Profile::getRightsFor('ITILFollowup', 'helpdesk'),
-                'label'      => _n('Followup', 'Followups', Session::getPluralNumber()),
-                'field'      => 'followup'
-            ],
-            ['rights'     => Profile::getRightsFor('TicketTask', 'helpdesk'),
-                'label'      => _n('Task', 'Tasks', Session::getPluralNumber()),
-                'field'      => 'task'
-            ],
-            ['rights'     => Profile::getRightsFor('TicketValidation', 'helpdesk'),
-                'label'      => _n('Validation', 'Validations', Session::getPluralNumber()),
-                'field'      => 'ticketvalidation'
-            ]
-        ];
-
         $matrix_options['title'] = __('Assistance');
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('helpdesk', 'tracking', 'general'), $matrix_options);
 
         echo "<div class='mt-4 mx-n2'>";
         echo "<table class='table table-hover card-table'>";
         echo "<thead>";
-        echo "<tr class='border-top'><th colspan='2'><h4>" . __('Association') . "</h4></th></tr>";
+        echo "<tr class='border-top'><th colspan='2'><h4>" . __s('Association') . "</h4></th></tr>";
         echo "</thead>";
 
         echo "<tr'>";
-        echo "<td>" . __('See hardware of my groups') . "</td>";
+        echo "<td>" . __s('See hardware of my groups') . "</td>";
         echo "<td>";
         Html::showCheckbox([
             'name'    => '_show_group_hardware',
@@ -836,7 +1236,7 @@ class Profile extends CommonDBTM
         echo "</tr>";
 
         echo "<tr>";
-        echo "<td>" . __('Link with items for the creation of tickets') . "</td>";
+        echo "<td>" . __s('Link with items for the creation of tickets') . "</td>";
         echo "<td>";
         self::getLinearRightChoice(
             self::getHelpdeskHardwareTypes(true),
@@ -848,15 +1248,15 @@ class Profile extends CommonDBTM
         echo "</tr>";
 
         echo "<tr>";
-        echo "<td>" . __('Associable items to a ticket') . "</td>";
-        echo "<td><input type='hidden' name='_helpdesk_item_types' value='1'>";
+        echo "<td>" . __s('Associable items to tickets, changes and problems') . "</td>";
+        echo "<td>";
         self::dropdownHelpdeskItemtypes(['values' => $this->fields["helpdesk_item_type"]]);
 
         echo "</td>";
         echo "</tr>";
 
         echo "<tr>";
-        echo "<td>" . __('Default ticket template') . "</td>";
+        echo "<td>" . __s('Default ticket template') . "</td>";
         echo "<td>";
        // Only root entity ones and recursive
         $options = ['value'     => $this->fields["tickettemplates_id"],
@@ -874,7 +1274,7 @@ class Profile extends CommonDBTM
         echo "</tr>";
 
         echo "<tr>";
-        echo "<td>" . __('Default change template') . "</td>";
+        echo "<td>" . __s('Default change template') . "</td>";
         echo "<td>";
        // Only root entity ones and recursive
         $options = ['value'     => $this->fields["changetemplates_id"],
@@ -892,7 +1292,7 @@ class Profile extends CommonDBTM
         echo "</tr>";
 
         echo "<tr>";
-        echo "<td>" . __('Default problem template') . "</td>";
+        echo "<td>" . __s('Default problem template') . "</td>";
         echo "<td>";
        // Only root entity ones and recursive
         $options = ['value'     => $this->fields["problemtemplates_id"],
@@ -927,7 +1327,6 @@ class Profile extends CommonDBTM
         echo "</div>";
     }
 
-
     /**
      * Print the helpdesk right form for the current profile
      *
@@ -948,26 +1347,8 @@ class Profile extends CommonDBTM
             'default_class' => 'tab_bg_2'
         ];
 
-        $rights = [['rights'    => Profile::getRightsFor('KnowbaseItem', 'helpdesk'),
-            'label'     => __('FAQ'),
-            'field'     => 'knowbase'
-        ],
-            ['rights'  => Profile::getRightsFor('ReservationItem', 'helpdesk'),
-                'label'     => _n('Reservation', 'Reservations', Session::getPluralNumber()),
-                'field'     => 'reservation'
-            ],
-            ['rights'    => Profile::getRightsFor('Reminder', 'helpdesk'),
-                'label'     => _n('Public reminder', 'Public reminders', Session::getPluralNumber()),
-                'field'     => 'reminder_public'
-            ],
-            ['rights'    => Profile::getRightsFor('RSSFeed', 'helpdesk'),
-                'label'     => _n('Public RSS feed', 'Public RSS feeds', Session::getPluralNumber()),
-                'field'     => 'rssfeed_public'
-            ]
-        ];
-
         $matrix_options['title'] = __('Tools');
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('helpdesk', 'tools', 'general'), $matrix_options);
 
         if ($canedit) {
             echo "<div class='center'>";
@@ -982,20 +1363,17 @@ class Profile extends CommonDBTM
         echo "</div>";
     }
 
-
-
     /**
      * Print the Asset rights form for the current profile
      *
      * @since 0.85
      *
-     * @param $openform  boolean open the form (true by default)
-     * @param $closeform boolean close the form (true by default)
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
      *
      **/
     public function showFormAsset($openform = true, $closeform = true)
     {
-
         if (!self::canView()) {
             return false;
         }
@@ -1008,59 +1386,20 @@ class Profile extends CommonDBTM
             echo "<form method='post' action='" . $this->getFormURL() . "' data-track-changes='true'>";
         }
 
-        $rights = [['itemtype'  => 'Computer',
-            'label'     => _n('Computer', 'Computers', Session::getPluralNumber()),
-            'field'     => 'computer'
-        ],
-            ['itemtype'  => 'Monitor',
-                'label'     => _n('Monitor', 'Monitors', Session::getPluralNumber()),
-                'field'     => 'monitor'
-            ],
-            ['itemtype'  => 'Software',
-                'label'     => _n('Software', 'Software', Session::getPluralNumber()),
-                'field'     => 'software'
-            ],
-            ['itemtype'  => 'NetworkEquipment',
-                'label'     => _n('Network', 'Networks', Session::getPluralNumber()),
-                'field'     => 'networking'
-            ],
-            ['itemtype'  => 'Printer',
-                'label'     => _n('Printer', 'Printers', Session::getPluralNumber()),
-                'field'     => 'printer'
-            ],
-            ['itemtype'  => 'Cartridge',
-                'label'     => _n('Cartridge', 'Cartridges', Session::getPluralNumber()),
-                'field'     => 'cartridge'
-            ],
-            ['itemtype'  => 'Consumable',
-                'label'     => _n('Consumable', 'Consumables', Session::getPluralNumber()),
-                'field'     => 'consumable'
-            ],
-            ['itemtype'  => 'Phone',
-                'label'     => Phone::getTypeName(Session::getPluralNumber()),
-                'field'     => 'phone'
-            ],
-            ['itemtype'  => 'Peripheral',
-                'label'     => Peripheral::getTypeName(Session::getPluralNumber()),
-                'field'     => 'peripheral'
-            ],
-            ['itemtype'  => 'NetworkName',
-                'label'     => __('Internet'),
-                'field'     => 'internet'
-            ],
-            ['itemtype'  => 'DeviceSimcard',
-                'label'     => __('Simcard PIN/PUK'),
-                'field'     => 'devicesimcard_pinpuk',
-                'rights'    => [READ    => __('Read'),
-                    UPDATE  => __('Update')
-                ]
-            ]
-        ];
-
-        $this->displayRightsChoiceMatrix($rights, ['canedit'       => $canedit,
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'assets', 'general'), [
+            'canedit'       => $canedit,
             'default_class' => 'tab_bg_2',
             'title'         => _n('Asset', 'Assets', Session::getPluralNumber())
         ]);
+
+        $custom_asset_rights = self::getRightsForForm('central', 'assets', 'custom_assets');
+        if (count($custom_asset_rights)) {
+            $this->displayRightsChoiceMatrix($custom_asset_rights, [
+                'canedit' => $canedit,
+                'default_class' => 'tab_bg_2',
+                'title' => _n('Custom asset', 'Custom assets', Session::getPluralNumber())
+            ]);
+        }
 
         if (
             $canedit
@@ -1072,25 +1411,23 @@ class Profile extends CommonDBTM
                 'class' => 'btn btn-primary mt-2',
                 'name'  => 'update'
             ]);
-            echo "</div>\n";
+            echo "</div>";
             Html::closeForm();
         }
 
         echo "</div>";
     }
 
-
     /**
      * Print the Management rights form for the current profile
      *
      * @since 0.85 (before showFormInventory)
      *
-     * @param $openform  boolean open the form (true by default)
-     * @param $closeform boolean close the form (true by default)
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
      **/
     public function showFormManagement($openform = true, $closeform = true)
     {
-
         if (!self::canView()) {
             return false;
         }
@@ -1108,75 +1445,13 @@ class Profile extends CommonDBTM
             'default_class' => 'tab_bg_2'
         ];
 
-        $rights = [['itemtype'  => 'SoftwareLicense',
-            'label'     => SoftwareLicense::getTypeName(Session::getPluralNumber()),
-            'field'     => 'license'
-        ],
-            ['itemtype'  => 'Contact',
-                'label'     => _n('Contact', 'Contacts', Session::getPluralNumber()) . " / " .
-                                           _n('Supplier', 'Suppliers', Session::getPluralNumber()),
-                'field'     => 'contact_enterprise'
-            ],
-            ['itemtype'  => 'Document',
-                'label'     => Document::getTypeName(Session::getPluralNumber()),
-                'field'     => 'document'
-            ],
-            ['itemtype'  => 'Contract',
-                'label'     => _n('Contract', 'Contracts', Session::getPluralNumber()),
-                'field'     => 'contract'
-            ],
-            ['itemtype'  => 'Infocom',
-                'label'     => __('Financial and administratives information'),
-                'field'     => 'infocom'
-            ],
-            ['itemtype'  => 'Budget',
-                'label'     => Budget::getTypeName(1),
-                'field'     => 'budget'
-            ],
-            ['itemtype'  => 'Line',
-                'label'     => Line::getTypeName(1),
-                'field'     => 'line'
-            ],
-            ['itemtype'  => 'Certificate',
-                'label'     => _n(
-                    'Certificate',
-                    'Certificates',
-                    Session::getPluralNumber()
-                ),
-                'field'     => 'certificate'
-            ],
-            ['itemtype'  => 'Datacenter',
-                'label'     => Datacenter::getTypeName(Session::getPluralNumber()),
-                'field'     => 'datacenter'
-            ],
-            ['itemtype'  => 'Cluster',
-                'label'     => Cluster::getTypeName(Session::getPluralNumber()),
-                'field'     => 'cluster'
-            ],
-            ['itemtype'  => 'Domain',
-                'label'     => _n('Domain', 'Domains', Session::getPluralNumber()),
-                'field'     => 'domain'
-            ],
-            ['itemtype'  => 'Appliance',
-                'label'     => Appliance::getTypeName(Session::getPluralNumber()),
-                'field'     => 'appliance'
-            ],
-            ['itemtype'  => 'DatabaseInstance',
-                'label'     => Database::getTypeName(Session::getPluralNumber()),
-                'field'     => 'database'
-            ],
-            ['itemtype'  => 'Cable',
-                'label'     => __('Cable management'),
-                'field'     => 'cable_management'
-            ],
-        ];
         $matrix_options['title'] = __('Management');
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'management', 'general'), $matrix_options);
 
         echo "<div class='tab_cadre_fixehov mx-n2'>";
         echo "<input type='hidden' name='_managed_domainrecordtypes' value='1'>";
         $rand = rand();
-        echo "<label for='dropdown_managed_domainrecordtypes$rand'>" . __('Manageable domain records') . "</label>";
+        echo "<label for='dropdown_managed_domainrecordtypes$rand'>" . __s('Manageable domain records') . "</label>";
         $values = ['-1' => __('All')];
         $values += $this->getDomainRecordTypes();
         Dropdown::showFromArray(
@@ -1208,18 +1483,16 @@ class Profile extends CommonDBTM
         echo "</div>";
     }
 
-
     /**
      * Print the Tools rights form for the current profile
      *
      * @since 0.85
      *
-     * @param $openform  boolean open the form (true by default)
-     * @param $closeform boolean close the form (true by default)
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
      **/
     public function showFormTools($openform = true, $closeform = true)
     {
-
         if (!self::canView()) {
             return false;
         }
@@ -1237,45 +1510,11 @@ class Profile extends CommonDBTM
             'default_class' => 'tab_bg_2'
         ];
 
-        $rights = [['itemtype'  => 'Reminder',
-            'label'     => _n('Public reminder', 'Public reminders', Session::getPluralNumber()),
-            'field'     => 'reminder_public'
-        ],
-            ['itemtype'  => 'RSSFeed',
-                'label'     => _n('Public RSS feed', 'Public RSS feeds', Session::getPluralNumber()),
-                'field'     => 'rssfeed_public'
-            ],
-            ['itemtype'  => 'SavedSearch',
-                'label'     => _n('Public saved search', 'Public saved searches', Session::getPluralNumber()),
-                'field'     => 'bookmark_public'
-            ],
-            ['itemtype'  => 'Report',
-                'label'     => _n('Report', 'Reports', Session::getPluralNumber()),
-                'field'     => 'reports'
-            ],
-            ['itemtype'  => 'KnowbaseItem',
-                'label'     => __('Knowledge base'),
-                'field'     => 'knowbase'
-            ],
-            ['itemtype'  => 'ReservationItem',
-                'label'     => __('Administration of reservations'),
-                'field'     => 'reservation'
-            ]
-        ];
         $matrix_options['title'] = __('Tools');
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tools', 'general'), $matrix_options);
 
-        $rights = [['itemtype'   => 'Project',
-            'label'      => _n('Project', 'Projects', Session::getPluralNumber()),
-            'field'      => 'project'
-        ],
-            ['itemtype'   => 'ProjectTask',
-                'label'      => _n('Task', 'Task', Session::getPluralNumber()),
-                'field'      => 'projecttask'
-            ]
-        ];
         $matrix_options['title'] = _n('Project', 'Projects', Session::getPluralNumber());
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tools', 'projects'), $matrix_options);
 
         if (
             $canedit
@@ -1293,12 +1532,11 @@ class Profile extends CommonDBTM
         echo "</div>";
     }
 
-
     /**
      * Print the Tracking right form for the current profile
      *
-     * @param $openform     boolean  open the form (true by default)
-     * @param $closeform    boolean  close the form (true by default)
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
      **/
     public function showFormTracking($openform = true, $closeform = true)
     {
@@ -1318,14 +1556,14 @@ class Profile extends CommonDBTM
         echo "<table class='table table-hover card-table'>";
        // Assistance / Tracking-helpdesk
         echo "<thead>";
-        echo "<tr><th colspan='2'><h4>" . __('ITIL Templates') . "<h4></th></tr>";
+        echo "<tr><th colspan='2'><h4>" . __s('ITIL Templates') . "<h4></th></tr>";
         echo "</thead>";
 
         echo "<tbody>";
         foreach (['Ticket', 'Change', 'Problem'] as $itiltype) {
             $object = new $itiltype();
             echo "<tr>";
-            echo "<td>" . sprintf(__('Default %1$s template'), $object->getTypeName()) . "</td><td>";
+            echo "<td>" . sprintf(__s('Default %1$s template'), $object->getTypeName()) . "</td><td>";
            // Only root entity ones and recursive
             $options = [
                 'value'     => $this->fields[strtolower($itiltype) . "templates_id"],
@@ -1352,66 +1590,27 @@ class Profile extends CommonDBTM
             'default_class' => 'tab_bg_2'
         ];
 
-        $rights = [
-            [
-                'itemtype'  => 'TicketTemplate',
-                'label'     => _n('Template', 'Templates', Session::getPluralNumber()),
-                'field'     => 'itiltemplate'
-            ],
-            [
-                'itemtype'  => 'PendingReason',
-                'label'     => PendingReason::getTypeName(0),
-                'field'     => 'pendingreason'
-            ],
-        ];
         $matrix_options['title'] = _n('ITIL object', 'ITIL objects', Session::getPluralNumber());
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tracking', 'itilobjects'), $matrix_options);
 
-        $rights = [['itemtype'  => 'Ticket',
-            'label'     => _n('Ticket', 'Tickets', Session::getPluralNumber()),
-            'field'     => 'ticket'
-        ],
-            ['itemtype'  => 'TicketCost',
-                'label'     => _n('Ticket cost', 'Ticket costs', Session::getPluralNumber()),
-                'field'     => 'ticketcost'
-            ],
-            ['itemtype'  => 'TicketRecurrent',
-                'label'     => __('Recurrent tickets'),
-                'field'     => 'ticketrecurrent'
-            ]
-        ];
         $matrix_options['title'] = _n('Ticket', 'Tickets', Session::getPluralNumber());
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tracking', 'tickets'), $matrix_options);
 
-        $rights = [['itemtype'  => 'ITILFollowup',
-            'label'     => _n('Followup', 'Followups', Session::getPluralNumber()),
-            'field'     => 'followup'
-        ],
-            ['itemtype'  => 'TicketTask',
-                'label'     => _n('Task', 'Tasks', Session::getPluralNumber()),
-                'field'     => 'task'
-            ]
-        ];
         $matrix_options['title'] = _n('Followup', 'Followups', Session::getPluralNumber()) . " / " . _n('Task', 'Tasks', Session::getPluralNumber());
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tracking', 'followups_tasks'), $matrix_options);
 
-        $rights = [['itemtype'  => 'TicketValidation',
-            'label'     => _n('Validation', 'Validations', Session::getPluralNumber()),
-            'field'     => 'ticketvalidation'
-        ]
-        ];
         $matrix_options['title'] = _n('Validation', 'Validations', Session::getPluralNumber());
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tracking', 'validations'), $matrix_options);
 
         echo "<div class='mx-n2 my-4'>";
         echo "<table class='table table-hover card-table'>";
 
         echo "<thead>";
-        echo "<tr class='border-top'><th colspan='2'><h4>" . __('Association') . "<h4></th></tr>";
+        echo "<tr class='border-top'><th colspan='2'><h4>" . __s('Association') . "<h4></th></tr>";
         echo "</thead>";
 
         echo "<tr>";
-        echo "<td>" . __('See hardware of my groups') . "</td>";
+        echo "<td>" . __s('See hardware of my groups') . "</td>";
         echo "<td>";
         Html::showCheckbox(['name'    => '_show_group_hardware',
             'checked' => $this->fields['show_group_hardware']
@@ -1419,7 +1618,7 @@ class Profile extends CommonDBTM
         echo "</td></tr>";
 
         echo "<tr>";
-        echo "<td>" . __('Link with items for the creation of tickets') . "</td>";
+        echo "<td>" . __s('Link with items for the creation of tickets') . "</td>";
         echo "<td>";
         self::getLinearRightChoice(
             self::getHelpdeskHardwareTypes(true),
@@ -1430,66 +1629,25 @@ class Profile extends CommonDBTM
         echo "</td></tr>";
 
         echo "<tr>";
-        echo "<td>" . __('Associable items to a ticket') . "</td>";
-        echo "<td><input type='hidden' name='_helpdesk_item_types' value='1'>";
+        echo "<td>" . __s('Associable items to tickets, changes and problems') . "</td>";
+        echo "<td>";
         self::dropdownHelpdeskItemtypes(['values' => $this->fields["helpdesk_item_type"]]);
         echo "</td>";
         echo "</tr>";
         echo "</table>";
         echo "</div>";
 
-        $rights = [
-            [
-                'itemtype'   => 'Stat',
-                'label'      => __('Statistics'),
-                'field'      => 'statistic'
-            ],[
-                'itemtype'   => 'Planning',
-                'label'      => __('Planning'),
-                'field'      => 'planning'
-            ]
-        ];
         $matrix_options['title'] = __('Visibility');
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
-
-        $rights = [
-            [
-                'itemtype'   => 'PlanningExternalEvent',
-                'label'      => PlanningExternalEvent::getTypeName(Session::getPluralNumber()),
-                'field'      => 'externalevent'
-            ]
-        ];
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tracking', 'visibility'), $matrix_options);
 
         $matrix_options['title'] = __('Planning');
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tracking', 'planning'), $matrix_options);
 
-        $rights = [['itemtype'   => 'Problem',
-            'label'      => Problem::getTypeName(Session::getPluralNumber()),
-            'field'      => 'problem'
-        ]
-        ];
         $matrix_options['title'] = Problem::getTypeName(Session::getPluralNumber());
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tracking', 'problems'), $matrix_options);
 
-        $rights = [
-            [
-                'itemtype'   => 'Change',
-                'label'      => _n('Change', 'Changes', Session::getPluralNumber()),
-                'field'      => 'change'
-            ],
-            [
-                'itemtype'  => 'ChangeValidation',
-                'label'     => _n('Validation', 'Validations', Session::getPluralNumber()),
-                'field'     => 'changevalidation'
-            ],
-            [
-                'itemtype'  => RecurrentChange::class,
-                'label'     => RecurrentChange::getTypeName(2),
-                'field'     => RecurrentChange::$rightname
-            ]
-        ];
         $matrix_options['title'] = _n('Change', 'Changes', Session::getPluralNumber());
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'tracking', 'changes'), $matrix_options);
 
         if (
             $canedit
@@ -1501,35 +1659,34 @@ class Profile extends CommonDBTM
                 'class' => 'btn btn-primary mt-2',
                 'name'  => 'update'
             ]);
-            echo "</div>\n";
+            echo "</div>";
             Html::closeForm();
         }
         echo "</div>";
     }
-
 
     /**
      * Display the matrix of the elements lifecycle of the elements
      *
      * @since 0.85
      *
-     * @param $title          the kind of lifecycle
-     * @param $html_field     field that is sent to _POST
-     * @param $db_field       field inside the DB (to get current state)
-     * @param $statuses       all available statuses for the given cycle (obj::getAllStatusArray())
-     * @param $canedit        can we edit the elements ?
+     * @param string $title          the kind of lifecycle
+     * @param string $html_field     field that is sent to _POST
+     * @param string $db_field       field inside the DB (to get current state)
+     * @param array $statuses       all available statuses for the given cycle (obj::getAllStatusArray())
+     * @param boolean $canedit        can we edit the elements ?
      *
      * @return void
      **/
     public function displayLifeCycleMatrix($title, $html_field, $db_field, $statuses, $canedit)
     {
-
         $columns  = [];
         $rows     = [];
 
         foreach ($statuses as $index_1 => $status_1) {
             $columns[$index_1] = $status_1;
-            $row               = ['label'      => $status_1,
+            $row               = [
+                'label'      => $status_1,
                 'columns'    => []
             ];
 
@@ -1538,7 +1695,7 @@ class Profile extends CommonDBTM
                 if (isset($this->fields[$db_field][$index_1][$index_2])) {
                     $content['checked'] = $this->fields[$db_field][$index_1][$index_2];
                 }
-                if (($index_1 == $index_2) || (!$canedit)) {
+                if (($index_1 === $index_2) || (!$canedit)) {
                     $content['readonly'] = true;
                 }
                 $row['columns'][$index_2] = $content;
@@ -1548,24 +1705,23 @@ class Profile extends CommonDBTM
         Html::showCheckboxMatrix(
             $columns,
             $rows,
-            ['title'         => $title,
+            [
+                'title'         => $title,
                 'row_check_all' => true,
                 'col_check_all' => true,
-                'first_cell'    => '<b>' . __("From \ To") . '</b>'
+                'first_cell'    => '<b>' . __s("From \ To") . '</b>'
             ]
         );
     }
 
-
     /**
      * Print the Life Cycles form for the current profile
      *
-     * @param $openform   boolean  open the form (true by default)
-     * @param $closeform  boolean  close the form (true by default)
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
      **/
     public function showFormLifeCycle($openform = true, $closeform = true)
     {
-
         if (!self::canView()) {
             return false;
         }
@@ -1619,22 +1775,20 @@ class Profile extends CommonDBTM
         echo "</div>";
     }
 
-
     /**
      * Display the matrix of the elements lifecycle of the elements
      *
      * @since 0.85
      *
-     * @param $title          the kind of lifecycle
-     * @param $html_field     field that is sent to _POST
-     * @param $db_field       field inside the DB (to get current state)
-     * @param $canedit        can we edit the elements ?
+     * @param string $title          the kind of lifecycle
+     * @param string $html_field     field that is sent to _POST
+     * @param string $db_field       field inside the DB (to get current state)
+     * @param boolean $canedit        can we edit the elements ?
      *
      * @return void
      **/
     public function displayLifeCycleMatrixTicketHelpdesk($title, $html_field, $db_field, $canedit)
     {
-
         $columns     = [];
         $rows        = [];
         $statuses    = [];
@@ -1642,19 +1796,22 @@ class Profile extends CommonDBTM
         foreach ([Ticket::INCOMING, Ticket::SOLVED, Ticket::CLOSED] as $val) {
             $statuses[$val] = $allstatuses[$val];
         }
-        $alwaysok     = [Ticket::INCOMING => [],
+        $alwaysok     = [
+            Ticket::INCOMING => [],
             Ticket::SOLVED   => [Ticket::INCOMING],
             Ticket::CLOSED   => []
         ];
 
-        $allowactions = [Ticket::INCOMING => [],
+        $allowactions = [
+            Ticket::INCOMING => [],
             Ticket::SOLVED   => [Ticket::CLOSED],
             Ticket::CLOSED   => [Ticket::INCOMING]
         ];
 
         foreach ($statuses as $index_1 => $status_1) {
             $columns[$index_1] = $status_1;
-            $row               = ['label'      => $status_1,
+            $row               = [
+                'label'      => $status_1,
                 'columns'    => []
             ];
 
@@ -1664,14 +1821,14 @@ class Profile extends CommonDBTM
                     $content['checked'] = $this->fields[$db_field][$index_1][$index_2];
                 }
 
-                if (in_array($index_2, $alwaysok[$index_1])) {
+                if (in_array($index_2, $alwaysok[$index_1], true)) {
                     $content['checked'] = true;
                 }
 
                 if (
-                    ($index_1 == $index_2)
+                    ($index_1 === $index_2)
                     || (!$canedit)
-                    || !in_array($index_2, $allowactions[$index_1])
+                    || !in_array($index_2, $allowactions[$index_1], true)
                 ) {
                     $content['readonly'] = true;
                 }
@@ -1683,23 +1840,21 @@ class Profile extends CommonDBTM
             $columns,
             $rows,
             ['title'         => $title,
-                'first_cell'    => '<b>' . __("From \ To") . '</b>'
+                'first_cell'    => '<b>' . __s("From \ To") . '</b>'
             ]
         );
     }
-
 
     /**
      * Print the Life Cycles form for the current profile
      *
      *  @since 0.85
      *
-     * @param $openform   boolean  open the form (true by default)
-     * @param $closeform  boolean  close the form (true by default)
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
      **/
     public function showFormLifeCycleHelpdesk($openform = true, $closeform = true)
     {
-
         if (!self::canView()) {
             return false;
         }
@@ -1736,12 +1891,11 @@ class Profile extends CommonDBTM
         echo "</div>";
     }
 
-
     /**
-     * Print the central form for a profile
+     * Print the administration form for a profile
      *
-     * @param $openform     boolean  open the form (true by default)
-     * @param $closeform    boolean  close the form (true by default)
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
      **/
     public function showFormAdmin($openform = true, $closeform = true)
     {
@@ -1758,98 +1912,21 @@ class Profile extends CommonDBTM
             echo "<form method='post' action='" . $this->getFormURL() . "' data-track-changes='true'>";
         }
 
-        $matrix_options = ['canedit'       => $canedit,
-            'default_class' => 'tab_bg_4'
+        $matrix_options = [
+            'canedit'       => $canedit,
         ];
 
-        $rights = [
-            [
-                'itemtype'  => 'User',
-                'label'     => User::getTypeName(Session::getPluralNumber()),
-                'field'     => 'user',
-                'row_class' => 'tab_bg_2'
-            ], [
-                'itemtype'  => 'Entity',
-                'label'     => Entity::getTypeName(Session::getPluralNumber()),
-                'field'     => 'entity'
-            ], [
-                'itemtype'  => 'Group',
-                'label'     => Group::getTypeName(Session::getPluralNumber()),
-                'field'     => 'group'
-            ], [
-                'itemtype'  => 'Profile',
-                'label'     => Profile::getTypeName(Session::getPluralNumber()),
-                'field'     => 'profile'
-            ], [
-                'itemtype'  => 'QueuedNotification',
-                'label'     => __('Notification queue'),
-                'field'     => 'queuednotification'
-            ], [
-                'itemtype'  => 'Glpi\Inventory\Conf',
-                'label'     => __('Inventory'),
-                'field'     => 'inventory'
-            ], [
-                'itemtype'  => 'Log',
-                'label'     => Log::getTypeName(Session::getPluralNumber()),
-                'field'     => 'logs'
-            ]
-        ];
         $matrix_options['title'] = __('Administration');
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'admin', 'general'), $matrix_options);
 
-        $rights = [['itemtype'  => 'Rule',
-            'label'     => __('Authorizations assignment rules'),
-            'field'     => 'rule_ldap'
-        ],
-            ['itemtype'  => 'RuleImportAsset',
-                'label'     => __('Rules for assigning a computer to an entity'),
-                'field'     => 'rule_import'
-            ],
-            ['itemtype'  => 'RuleLocation',
-                'label'     => __('Rules for assigning a computer to a location'),
-                'field'     => 'rule_location'
-            ],
-            ['itemtype'  => 'RuleMailCollector',
-                'label'     => __('Rules for assigning a ticket created through a mails receiver'),
-                'field'     => 'rule_mailcollector'
-            ],
-            ['itemtype'  => 'RuleSoftwareCategory',
-                'label'     => __('Rules for assigning a category to a software'),
-                'field'     => 'rule_softwarecategories'
-            ],
-            ['itemtype'  => 'RuleTicket',
-                'label'     => __('Business rules for tickets (entity)'),
-                'field'     => 'rule_ticket',
-                'row_class' => 'tab_bg_2'
-            ],
-            ['itemtype'  => 'RuleAsset',
-                'label'     => __('Business rules for assets'),
-                'field'     => 'rule_asset',
-                'row_class' => 'tab_bg_2'
-            ],
-            ['itemtype'  => 'Transfer',
-                'label'     => __('Transfer'),
-                'field'     => 'transfer'
-            ]
-        ];
+        $matrix_options['title'] = __('Inventory');
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'admin', 'inventory'), $matrix_options);
+
         $matrix_options['title'] = _n('Rule', 'Rules', Session::getPluralNumber());
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'admin', 'rules'), $matrix_options);
 
-        $rights = [['itemtype'  => 'RuleDictionnaryDropdown',
-            'label'     => __('Dropdowns dictionary'),
-            'field'     => 'rule_dictionnary_dropdown'
-        ],
-            ['itemtype'  => 'RuleDictionnarySoftware',
-                'label'     => __('Software dictionary'),
-                'field'     => 'rule_dictionnary_software'
-            ],
-            ['itemtype'  => 'RuleDictionnaryPrinter',
-                'label'     => __('Printers dictionnary'),
-                'field'     => 'rule_dictionnary_printer'
-            ]
-        ];
         $matrix_options['title'] = __('Dropdowns dictionary');
-        $this->displayRightsChoiceMatrix($rights, $matrix_options);
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'admin', 'dictionaries'), $matrix_options);
 
         if (
             $canedit
@@ -1870,14 +1947,13 @@ class Profile extends CommonDBTM
     }
 
     /**
-     * Print the central form for a profile
+     * Print the setup form for a profile
      *
-     * @param $openform     boolean  open the form (true by default)
-     * @param $closeform    boolean  close the form (true by default)
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
      **/
     public function showFormSetup($openform = true, $closeform = true)
     {
-
         if (!self::canView()) {
             return false;
         }
@@ -1890,114 +1966,8 @@ class Profile extends CommonDBTM
             echo "<form method='post' action='" . $this->getFormURL() . "' data-track-changes='true'>";
         }
 
-        $dropdown_rights = $this->getRights();
-        unset($dropdown_rights[DELETE]);
-        unset($dropdown_rights[UNLOCK]);
-
-        $rights = [
-            [
-                'itemtype'  => 'Config',
-                'label'     => __('General setup'),
-                'field'     => 'config'
-            ],
-            [
-                'rights'  => [
-                    READ    => __('Read'),
-                    UPDATE  => __('Update')
-                ],
-                'label'  => __('Personalization'),
-                'field'  => 'personalization'
-            ],
-            [
-                'itemtype'  => 'Glpi\Dashboard\Grid',
-                'label'     => __('All dashboards'),
-                'field'     => 'dashboard'
-            ],
-            [
-                'itemtype'  => 'DisplayPreference',
-                'label'     => __('Search result display'),
-                'field'     => 'search_config'
-            ],
-            [
-                'itemtype'  => 'Item_Devices',
-                'label'     => _n('Component', 'Components', Session::getPluralNumber()),
-                'field'     => 'device'
-            ],
-            [
-                'rights'    => $dropdown_rights,
-                'label'     => _n('Global dropdown', 'Global dropdowns', Session::getPluralNumber()),
-                'field'     => 'dropdown'
-            ],
-            __('Entity dropdowns'),
-            [
-                'itemtype'  => 'Location',
-                'label'     => Location::getTypeName(Session::getPluralNumber()),
-                'field'     => 'location'
-            ],
-            [
-                'itemtype'  => 'ITILCategory',
-                'label'     => _n('Ticket category', 'Ticket categories', Session::getPluralNumber()),
-                'field'     => 'itilcategory'
-            ],
-            [
-                'itemtype'  => 'KnowbaseItemCategory',
-                'label'     => _n('Knowledge base category', 'Knowledge base categories', Session::getPluralNumber()),
-                'field'     => 'knowbasecategory'
-            ],
-            [
-                'itemtype'  => 'TaskCategory',
-                'label'     => _n('Task category', 'Task categories', Session::getPluralNumber()),
-                'field'     => 'taskcategory'
-            ],
-            [
-                'itemtype'  => 'State',
-                'label'     => _n('Status of items', 'Statuses of items', Session::getPluralNumber()),
-                'field'     => 'state'
-            ],
-            [
-                'itemtype'  => 'ITILFollowupTemplate',
-                'label'     => _n('Followup template', 'Followup templates', Session::getPluralNumber()),
-                'field'     => 'itilfollowuptemplate'
-            ],
-            [
-                'itemtype'  => 'SolutionTemplate',
-                'label'     => _n('Solution template', 'Solution templates', Session::getPluralNumber()),
-                'field'     => 'solutiontemplate'
-            ],
-            [
-                'itemtype'  => 'Calendar',
-                'label'     => _n('Calendar', 'Calendars', Session::getPluralNumber()),
-                'field'     => 'calendar'
-            ],
-            [
-                'itemtype'  => 'DocumentType',
-                'label'     => DocumentType::getTypeName(1),
-                'field'     => 'typedoc'
-            ],
-            [
-                'itemtype'  => 'Link',
-                'label'     => _n('External link', 'External links', Session::getPluralNumber()),
-                'field'     => 'link'
-            ],
-            [
-                'itemtype'  => 'Notification',
-                'label'     => _n('Notification', 'Notifications', Session::getPluralNumber()),
-                'field'     => 'notification'
-            ],
-            [
-                'itemtype'  => 'SLM',
-                'label'     => __('SLM'),
-                'field'     => 'slm'
-            ],
-            [
-                'itemtype'  => 'LineOperator',
-                'label'     => _n('Line operator', 'Line operators', Session::getPluralNumber()),
-                'field'     => 'lineoperator'
-            ]
-        ];
-
-        $this->displayRightsChoiceMatrix($rights, ['canedit'       => $canedit,
-            'default_class' => 'tab_bg_2',
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('central', 'setup', 'general'), [
+            'canedit'       => $canedit,
             'title'         => __('Setup')
         ]);
 
@@ -2018,7 +1988,6 @@ class Profile extends CommonDBTM
 
         $this->showLegend();
     }
-
 
     /**
      * Print the Setup rights form for a helpdesk profile
@@ -2033,7 +2002,6 @@ class Profile extends CommonDBTM
      **/
     public function showFormSetupHelpdesk($openform = true, $closeform = true)
     {
-
         if (!self::canView()) {
             return false;
         }
@@ -2046,17 +2014,8 @@ class Profile extends CommonDBTM
             echo "<form method='post' action='" . $this->getFormURL() . "' data-track-changes='true'>";
         }
 
-        $rights = [['rights'  => [
-            READ    => __('Read'),
-            UPDATE  => __('Update')
-        ],
-            'label'  => __('Personalization'),
-            'field'  => 'personalization'
-        ]
-        ];
-
-        $this->displayRightsChoiceMatrix($rights, ['canedit'       => $canedit,
-            'default_class' => 'tab_bg_2',
+        $this->displayRightsChoiceMatrix(self::getRightsForForm('helpdesk', 'setup', 'general'), [
+            'canedit'       => $canedit,
             'title'         => __('Setup')
         ]);
 
@@ -2078,6 +2037,21 @@ class Profile extends CommonDBTM
         $this->showLegend();
     }
 
+    /**
+     * Print the Security form for a profile
+     *
+     * @param boolean $openform open the form (true by default)
+     * @param boolean $closeform close the form (true by default)
+     **/
+    public function showFormSecurity($openform = true, $closeform = true)
+    {
+        $canedit = Session::haveRightsOr(self::$rightname, [CREATE, UPDATE, PURGE]);
+        TemplateRenderer::getInstance()->display('pages/2fa/2fa_config.html.twig', [
+            'canedit' => $canedit,
+            'item'   => $this,
+            'action' => Toolbox::getItemTypeFormURL(__CLASS__)
+        ]);
+    }
 
     public function rawSearchOptions()
     {
@@ -2090,7 +2064,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '1',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'name',
             'name'               => __('Name'),
             'datatype'           => 'itemlink',
@@ -2099,7 +2073,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '2',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'id',
             'name'               => __('ID'),
             'massiveaction'      => false,
@@ -2108,7 +2082,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '19',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'date_mod',
             'name'               => __('Last update'),
             'datatype'           => 'datetime',
@@ -2117,7 +2091,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '121',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'date_creation',
             'name'               => __('Creation date'),
             'datatype'           => 'datetime',
@@ -2126,7 +2100,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '5',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'interface',
             'name'               => __("Profile's interface"),
             'massiveaction'      => false,
@@ -2136,7 +2110,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '3',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'is_default',
             'name'               => __('Default profile'),
             'datatype'           => 'bool',
@@ -2145,7 +2119,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '118',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'create_ticket_on_login',
             'name'               => __('Ticket creation form on login'),
             'datatype'           => 'bool'
@@ -2153,7 +2127,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '16',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'comment',
             'name'               => __('Comments'),
             'datatype'           => 'text'
@@ -2308,6 +2282,20 @@ class Profile extends CommonDBTM
         ];
 
         $tab[] = [
+            'id'                 => '130',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => __('Simcard PIN/PUK'),
+            'datatype'           => 'right',
+            'rightclass'         => 'Item_DeviceSimcard',
+            'rightname'          => 'devicesimcard_pinpuk',
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => 'devicesimcard_pinpuk']
+            ]
+        ];
+
+        $tab[] = [
             'id'                 => 'management',
             'name'               => __('Management')
         ];
@@ -2383,6 +2371,147 @@ class Profile extends CommonDBTM
         ];
 
         $tab[] = [
+            'id'                 => '142',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => SoftwareLicense::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => SoftwareLicense::class,
+            'rightname'          => SoftwareLicense::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => SoftwareLicense::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '143',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => _n('Contact', 'Contacts', Session::getPluralNumber()) . " / " .
+                _n('Supplier', 'Suppliers', Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Contact::class,
+            'rightname'          => 'contact_enterprise',
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => 'contact_enterprise']
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '144',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Line::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Line::class,
+            'rightname'          => Line::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Line::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '145',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Certificate::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Certificate::class,
+            'rightname'          => Certificate::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Certificate::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '146',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Datacenter::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Datacenter::class,
+            'rightname'          => Datacenter::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Datacenter::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '147',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Cluster::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Cluster::class,
+            'rightname'          => Cluster::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Cluster::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '148',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Domain::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Domain::class,
+            'rightname'          => Domain::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Domain::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '149',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Appliance::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Appliance::class,
+            'rightname'          => Appliance::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Appliance::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '150',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => DatabaseInstance::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => DatabaseInstance::class,
+            'rightname'          => DatabaseInstance::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => DatabaseInstance::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '151',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Cable::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Cable::class,
+            'rightname'          => Cable::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Cable::$rightname]
+            ]
+        ];
+
+        $tab[] = [
             'id'                 => 'tools',
             'name'               => __('Tools')
         ];
@@ -2427,6 +2556,34 @@ class Profile extends CommonDBTM
             'joinparams'         => [
                 'jointype'           => 'child',
                 'condition'          => ['NEWTABLE.name' => 'reports']
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '140',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Project::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Project::class,
+            'rightname'          => Project::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Project::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '141',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => ProjectTask::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => ProjectTask::class,
+            'rightname'          => ProjectTask::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => ProjectTask::$rightname]
             ]
         ];
 
@@ -2566,6 +2723,188 @@ class Profile extends CommonDBTM
         ];
 
         $tab[] = [
+            'id'                 => '162',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => __('All dashboards'),
+            'datatype'           => 'right',
+            'rightclass'         => Glpi\Dashboard\Grid::class,
+            'rightname'          => 'dashboard',
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => 'dashboard']
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '163',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Location::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Location::class,
+            'rightname'          => Location::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Location::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '164',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => ITILCategory::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => ITILCategory::class,
+            'rightname'          => ITILCategory::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => ITILCategory::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '165',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => KnowbaseItemCategory::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => KnowbaseItemCategory::class,
+            'rightname'          => KnowbaseItemCategory::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => KnowbaseItemCategory::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '166',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => TaskCategory::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => TaskCategory::class,
+            'rightname'          => TaskCategory::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => TaskCategory::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '167',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => State::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => State::class,
+            'rightname'          => State::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => State::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '168',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => ITILFollowupTemplate::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => ITILFollowupTemplate::class,
+            'rightname'          => ITILFollowupTemplate::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => ITILFollowupTemplate::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '169',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => SolutionTemplate::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => SolutionTemplate::class,
+            'rightname'          => SolutionTemplate::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => SolutionTemplate::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '173',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => ITILValidationTemplate::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => ITILValidationTemplate::class,
+            'rightname'          => ITILValidationTemplate::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => ITILValidationTemplate::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '170',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => __('SLM'),
+            'datatype'           => 'right',
+            'rightclass'         => SLM::class,
+            'rightname'          => 'slm',
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => 'slm']
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '171',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => LineOperator::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => LineOperator::class,
+            'rightname'          => LineOperator::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => LineOperator::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '174',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => OAuthClient::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => OAuthClient::class,
+            'rightname'          => OAuthClient::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => OAuthClient::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '176',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => DefaultFilter::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => DefaultFilter::class,
+            'rightname'          => DefaultFilter::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => DefaultFilter::$rightname]
+            ]
+        ];
+
+        $tab[] = [
             'id'                 => 'admin',
             'name'               => __('Administration')
         ];
@@ -2582,6 +2921,36 @@ class Profile extends CommonDBTM
             'joinparams'         => [
                 'jointype'           => 'child',
                 'condition'          => ['NEWTABLE.name' => 'rule_ticket']
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '172',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => __('Business rules for changes'),
+            'datatype'           => 'right',
+            'rightclass'         => 'RuleChange',
+            'rightname'          => 'rule_change',
+            'nowrite'            => true,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => 'rule_change']
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '175',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => __('Business rules for problems'),
+            'datatype'           => 'right',
+            'rightclass'         => 'RuleProblem',
+            'rightname'          => 'rule_problem',
+            'nowrite'            => true,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => 'rule_problem']
             ]
         ];
 
@@ -2642,6 +3011,34 @@ class Profile extends CommonDBTM
         ];
 
         $tab[] = [
+            'id'                 => '159',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => RuleLocation::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => RuleLocation::class,
+            'rightname'          => RuleLocation::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => RuleLocation::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '160',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => RuleAsset::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => RuleAsset::class,
+            'rightname'          => RuleAsset::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => RuleAsset::$rightname]
+            ]
+        ];
+
+        $tab[] = [
             'id'                 => '90',
             'table'              => 'glpi_profilerights',
             'field'              => 'rights',
@@ -2666,6 +3063,20 @@ class Profile extends CommonDBTM
             'joinparams'         => [
                 'jointype'           => 'child',
                 'condition'          => ['NEWTABLE.name' => 'rule_dictionnary_dropdown']
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '161',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => RuleDictionnaryPrinter::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => RuleDictionnaryPrinter::class,
+            'rightname'          => RuleDictionnaryPrinter::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => RuleDictionnaryPrinter::$rightname]
             ]
         ];
 
@@ -2746,11 +3157,124 @@ class Profile extends CommonDBTM
             'name'               => _n('Log', 'Logs', Session::getPluralNumber()),
             'datatype'           => 'right',
             'rightclass'         => 'Log',
-            'rightname'          => 'logs',
+            'rightname'          => Log::$rightname,
             'nowrite'            => true,
             'joinparams'         => [
                 'jointype'           => 'child',
-                'condition'          => ['NEWTABLE.name' => 'logs']
+                'condition'          => ['NEWTABLE.name' => Log::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '62',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => __('System logs'),
+            'datatype'           => 'right',
+            'rightclass'         => 'Log',
+            'rightname'          => Event::$rightname,
+            'nowrite'            => true,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Event::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '152',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => QueuedNotification::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => QueuedNotification::class,
+            'rightname'          => QueuedNotification::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => QueuedNotification::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '153',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => __('Inventory'),
+            'datatype'           => 'right',
+            'rightclass'         => \Glpi\Inventory\Conf::class,
+            'rightname'          => \Glpi\Inventory\Conf::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => \Glpi\Inventory\Conf::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '154',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Lockedfield::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Lockedfield::class,
+            'rightname'          => Lockedfield::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Lockedfield::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '155',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => SNMPCredential::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => SNMPCredential::class,
+            'rightname'          => SNMPCredential::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => SNMPCredential::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '156',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => RefusedEquipment::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => RefusedEquipment::class,
+            'rightname'          => RefusedEquipment::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => RefusedEquipment::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '157',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Unmanaged::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Unmanaged::class,
+            'rightname'          => Unmanaged::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Unmanaged::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '158',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Agent::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => Agent::class,
+            'rightname'          => Agent::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Agent::$rightname]
             ]
         ];
 
@@ -2845,7 +3369,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '86',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'helpdesk_hardware',
             'name'               => __('Link with items for the creation of tickets'),
             'massiveaction'      => false,
@@ -2854,16 +3378,16 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '87',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'helpdesk_item_type',
-            'name'               => __('Associable items to a ticket'),
+            'name'               => __('Associable items to tickets, changes and problems'),
             'massiveaction'      => false,
             'datatype'           => 'specific'
         ];
 
         $tab[] = [
             'id'                 => '88',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'managed_domainrecordtypes',
             'name'               => __('Managed domain records types'),
             'massiveaction'      => false,
@@ -2884,7 +3408,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '100',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'ticket_status',
             'name'               => __('Life cycle of tickets'),
             'nosearch'           => true,
@@ -2894,7 +3418,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '110',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'problem_status',
             'name'               => __('Life cycle of problems'),
             'nosearch'           => true,
@@ -2918,7 +3442,7 @@ class Profile extends CommonDBTM
 
         $tab[] = [
             'id'                 => '111',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'change_status',
             'name'               => __('Life cycle of changes'),
             'nosearch'           => true,
@@ -2941,6 +3465,132 @@ class Profile extends CommonDBTM
         ];
 
         $tab[] = [
+            'id'                 => '131',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => ITILFollowup::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => ITILFollowup::class,
+            'rightname'          => ITILFollowup::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => ITILFollowup::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '132',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => TicketTask::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => TicketTask::class,
+            'rightname'          => TicketTask::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => TicketTask::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '133',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => TicketValidation::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => TicketValidation::class,
+            'rightname'          => TicketValidation::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => TicketValidation::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '134',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => _n('Template', 'Templates', Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => TicketTemplate::class,
+            'rightname'          => 'itiltemplate',
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => 'itiltemplate']
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '135',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => PendingReason::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => PendingReason::class,
+            'rightname'          => PendingReason::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => PendingReason::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '136',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => TicketRecurrent::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => TicketRecurrent::class,
+            'rightname'          => TicketRecurrent::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => TicketRecurrent::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '137',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => PlanningExternalEvent::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => PlanningExternalEvent::class,
+            'rightname'          => PlanningExternalEvent::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => PlanningExternalEvent::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '138',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => ChangeValidation::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => ChangeValidation::class,
+            'rightname'          => ChangeValidation::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => ChangeValidation::$rightname]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '139',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => RecurrentChange::getTypeName(Session::getPluralNumber()),
+            'datatype'           => 'right',
+            'rightclass'         => RecurrentChange::class,
+            'rightname'          => RecurrentChange::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => RecurrentChange::$rightname]
+            ]
+        ];
+
+        $tab[] = [
             'id'                 => 'other',
             'name'               => __('Other')
         ];
@@ -2949,7 +3599,7 @@ class Profile extends CommonDBTM
             'id'                 => '4',
             'table'              => 'glpi_profilerights',
             'field'              => 'rights',
-            'name'               => __('Update password'),
+            'name'               => __('Update own password'),
             'datatype'           => 'bool',
             'joinparams'         => [
                 'jointype'           => 'child',
@@ -2999,20 +3649,25 @@ class Profile extends CommonDBTM
             ]
         ];
 
+        $tab[] = [
+            'id'                 => '122',
+            'table'              => 'glpi_profilerights',
+            'field'              => 'rights',
+            'name'               => Form::getTypeName(1),
+            'datatype'           => 'right',
+            'rightclass'         => Form::class,
+            'rightname'          => Form::$rightname,
+            'joinparams'         => [
+                'jointype'           => 'child',
+                'condition'          => ['NEWTABLE.name' => Form::$rightname]
+            ]
+        ];
+
         return $tab;
     }
 
-
-    /**
-     * @since 0.84
-     *
-     * @param $field
-     * @param $values
-     * @param $options   array
-     **/
     public static function getSpecificValueToDisplay($field, $values, array $options = [])
     {
-
         if (!is_array($values)) {
             $values = [$field => $values];
         }
@@ -3028,7 +3683,7 @@ class Profile extends CommonDBTM
                 $message = [];
                 foreach ($types as $type) {
                     if ($item = getItemForItemtype($type)) {
-                        $message[] = $item->getTypeName();
+                        $message[] = $item::getTypeName();
                     }
                 }
                 return implode(', ', $message);
@@ -3036,18 +3691,8 @@ class Profile extends CommonDBTM
         return parent::getSpecificValueToDisplay($field, $values, $options);
     }
 
-
-    /**
-     * @since 0.84
-     *
-     * @param $field
-     * @param $name               (default '')
-     * @param $values             (default '')
-     * @param $options      array
-     **/
     public static function getSpecificValueToSelect($field, $name = '', $values = '', array $options = [])
     {
-
         if (!is_array($values)) {
             $values = [$field => $values];
         }
@@ -3069,20 +3714,17 @@ class Profile extends CommonDBTM
         return parent::getSpecificValueToSelect($field, $name, $values, $options);
     }
 
-
     /**
      * Make a select box for rights
      *
-     * @since 0.85
-     *
-     * @param $values    array    of values to display
-     * @param $name      integer  name of the dropdown
-     * @param $current   integer  value in database (sum of rights)
-     * @param $options   array
-     **/
+     * @param array $values Array of values to display
+     * @param string $name name of the dropdown
+     * @param integer $current value in database (sum of rights)
+     * @param array$options
+     ** @since 0.85
+     */
     public static function dropdownRights(array $values, $name, $current, $options = [])
     {
-
         foreach ($values as $key => $value) {
             if (is_array($value)) {
                 $values[$key] = $value['long'];
@@ -3094,7 +3736,7 @@ class Profile extends CommonDBTM
         $param['size']    = count($values);
         $tabselect = [];
         foreach ($values as $k => $v) {
-            if ($current & $k) {
+            if ((int) $current & $k) {
                 $tabselect[] = $k;
             }
         }
@@ -3106,24 +3748,22 @@ class Profile extends CommonDBTM
             }
         }
 
-       // To allow dropdown with no value to be in prepareInputForUpdate
-       // without this, you can't have an empty dropdown
-       // done to avoid define NORIGHT value
+        // To allow dropdown with no value to be in prepareInputForUpdate
+        // without this, you can't have an empty dropdown
+        // done to avoid define NORIGHT value
         if ($param['multiple']) {
-            echo "<input type='hidden' name='" . $name . "[]' value='0'>";
+            echo "<input type='hidden' name='" . htmlescape($name) . "[]' value='0'>";
         }
         return Dropdown::showFromArray($name, $values, $param);
     }
-
-
 
     /**
      * Make a select box for a None Read Write choice
      *
      * @since 0.84
      *
-     * @param $name          select name
-     * @param $options array of possible options:
+     * @param string $name          select name
+     * @param array $options array of possible options:
      *       - value   : preselected value.
      *       - nonone  : hide none choice ? (default false)
      *       - noread  : hide read choice ? (default false)
@@ -3137,7 +3777,6 @@ class Profile extends CommonDBTM
      **/
     public static function dropdownRight($name, $options = [])
     {
-
         $param['value']   = '';
         $param['display'] = true;
         $param['nonone']  = false;
@@ -3171,17 +3810,17 @@ class Profile extends CommonDBTM
         );
     }
 
-
     /**
      * Dropdown profiles which have rights under the active one
      *
-     * @param $options array of possible options:
+     * @param array $options array of possible options:
      *    - name : string / name of the select (default is profiles_id)
      *    - value : integer / preselected value (default 0)
      *
      **/
     public static function dropdownUnder($options = [])
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $p['name']  = 'profiles_id';
@@ -3195,25 +3834,27 @@ class Profile extends CommonDBTM
         }
 
         $iterator = $DB->request([
+            'SELECT' => ['id', 'name'],
             'FROM'   => self::getTable(),
             'WHERE'  => self::getUnderActiveProfileRestrictCriteria(),
             'ORDER'  => 'name'
         ]);
 
-       //New rule -> get the next free ranking
+        // New rule -> get the next free ranking
+        $profiles = [];
         foreach ($iterator as $data) {
             $profiles[$data['id']] = $data['name'];
         }
         Dropdown::showFromArray(
             $p['name'],
             $profiles,
-            ['value'               => $p['value'],
+            [
+                'value'               => $p['value'],
                 'rand'                => $p['rand'],
                 'display_emptychoice' => true
             ]
         );
     }
-
 
     /**
      * Get the default Profile for new user
@@ -3222,98 +3863,89 @@ class Profile extends CommonDBTM
      **/
     public static function getDefault()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
-        foreach ($DB->request('glpi_profiles', ['is_default' => 1]) as $data) {
-            return $data['id'];
-        }
-        return 0;
+        $profiles = $DB->request([
+            'SELECT' => ['id'],
+            'FROM' => self::getTable(),
+            'WHERE' => ['is_default' => 1],
+            'LIMIT' => 1,
+        ]);
+        return count($profiles) ? $profiles->current()['id'] : 0;
     }
 
-
     /**
+     * @return array<string, string>
      * @since 0.84
      **/
-    public static function getInterfaces()
+    public static function getInterfaces(): array
     {
-
-        return ['central'  => __('Standard interface'),
+        return [
+            'central'  => __('Standard interface'),
             'helpdesk' => __('Simplified interface')
         ];
     }
 
-
     /**
      * @param $value
-     **/
-    public static function getInterfaceName($value)
+     * @return string
+     */
+    public static function getInterfaceName($value): string
     {
-
-        $tab = self::getInterfaces();
-        if (isset($tab[$value])) {
-            return $tab[$value];
-        }
-        return NOT_AVAILABLE;
+        return self::getInterfaces()[$value] ?? NOT_AVAILABLE;
     }
-
 
     /**
      * @since 0.84
      *
-     * @param $rights   boolean   (false by default)
+     * @param boolean $rights
      **/
     public static function getHelpdeskHardwareTypes($rights = false)
     {
-
         if ($rights) {
-            return [pow(2, Ticket::HELPDESK_MY_HARDWARE)     => __('My devices'),
-                pow(2, Ticket::HELPDESK_ALL_HARDWARE)    => __('All items')
+            return [
+                2 ** Ticket::HELPDESK_MY_HARDWARE => __('My devices'),
+                2 ** Ticket::HELPDESK_ALL_HARDWARE => __('All items')
             ];
         }
 
-        return [0                                        => Dropdown::EMPTY_VALUE,
-            pow(2, Ticket::HELPDESK_MY_HARDWARE)     => __('My devices'),
-            pow(2, Ticket::HELPDESK_ALL_HARDWARE)    => __('All items'),
-            pow(2, Ticket::HELPDESK_MY_HARDWARE)
-                    + pow(2, Ticket::HELPDESK_ALL_HARDWARE) => __('My devices and all items')
+        return [
+            0                                        => Dropdown::EMPTY_VALUE,
+            2 ** Ticket::HELPDESK_MY_HARDWARE => __('My devices'),
+            2 ** Ticket::HELPDESK_ALL_HARDWARE => __('All items'),
+            (2 ** Ticket::HELPDESK_MY_HARDWARE) + (2 ** Ticket::HELPDESK_ALL_HARDWARE) => __('My devices and all items')
         ];
     }
 
-
     /**
-     * @since 0.84
-     *
      * @param $value
-     **/
+     * @return mixed|string
+     * @since 0.84
+     */
     public static function getHelpdeskHardwareTypeName($value)
     {
-
-        $tab = self::getHelpdeskHardwareTypes();
-        if (isset($tab[$value])) {
-            return $tab[$value];
-        }
-        return NOT_AVAILABLE;
+        return self::getHelpdeskHardwareTypes()[$value] ?? NOT_AVAILABLE;
     }
-
 
     /**
      * @since 0.85
      **/
     public static function getHelpdeskItemtypes()
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $values = [];
         foreach ($CFG_GLPI["ticket_types"] as $key => $itemtype) {
             if ($item = getItemForItemtype($itemtype)) {
-                $values[$itemtype] = $item->getTypeName();
+                $values[$itemtype] = $item::getTypeName();
             } else {
                 unset($CFG_GLPI["ticket_types"][$key]);
             }
         }
         return $values;
     }
-
 
     /**
      * Get domains records types
@@ -3322,9 +3954,11 @@ class Profile extends CommonDBTM
      */
     public function getDomainRecordTypes()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $iterator = $DB->request([
+            'SELECT' => ['id', 'name'],
             'FROM'   => DomainRecordType::getTable(),
         ]);
 
@@ -3340,7 +3974,7 @@ class Profile extends CommonDBTM
      *
      * @since 0.84
      *
-     * @param $options array of possible options:
+     * @param array $options array of possible options:
      *    - name : string / name of the select (default is profiles_id)
      *    - values : array of values
      **/
@@ -3363,21 +3997,21 @@ class Profile extends CommonDBTM
         return Dropdown::showFromArray($p['name'], $values, $p);
     }
 
-
     /**
      * Check if user has given right.
      *
      * @since 0.84
      *
-     * @param $user_id    integer  id of the user
-     * @param $rightname  string   name of right to check
-     * @param $rightvalue integer  value of right to check
-     * @param $entity_id  integer  id of the entity
+     * @param integer $user_id id of the user
+     * @param string $rightname name of right to check
+     * @param integer $rightvalue value of right to check
+     * @param integer $entity_id id of the entity
      *
      * @return boolean
      */
     public static function haveUserRight($user_id, $rightname, $rightvalue, $entity_id)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $result = $DB->request(
@@ -3415,48 +4049,45 @@ class Profile extends CommonDBTM
         return $data['cpt'] > 0;
     }
 
-
     /**
      * Get rights for an itemtype
      *
      * @since 0.85
      *
-     * @param $itemtype   string   itemtype
-     * @param $interface  string   (default 'central')
+     * @param class-string<CommonDBTM> $itemtype itemtype
+     * @param string $interface (default 'central')
      *
-     * @return rights
+     * @return array
      **/
     public static function getRightsFor($itemtype, $interface = 'central')
     {
-
         if (class_exists($itemtype)) {
-            $item = new $itemtype();
-            return $item->getRights($interface);
+            return (new $itemtype())->getRights($interface);
         }
-    }
 
+        return [];
+    }
 
     /**
      * Display rights choice matrix
      *
      * @since 0.85
      *
-     * @param $rights array    possible:
+     * @param array $rights    possible:
      *             'itemtype'   => the type of the item to check (as passed to self::getRightsFor())
      *             'rights'     => when use of self::getRightsFor() is impossible
      *             'label'      => the label for the right
      *             'field'      => the name of the field inside the DB and HTML form (prefixed by '_')
      *             'html_field' => when $html_field != '_'.$field
-     * @param $options array   possible:
+     * @param array $options   possible:
      *             'title'         the title of the matrix
      *             'canedit'
      *             'default_class' the default CSS class used for the row
      *
-     * @return random value used to generate the ids
+     * @return integer random value used to generate the ids
      **/
     public function displayRightsChoiceMatrix(array $rights, array $options = [])
     {
-
         $param                  = [];
         $param['title']         = '';
         $param['canedit']       = true;
@@ -3496,6 +4127,9 @@ class Profile extends CommonDBTM
                 ];
                 if (!empty($info['row_class'])) {
                     $row['class'] = $info['row_class'];
+                } else if (isset($info['scope'])) {
+                    $default_scope_class = !empty($param['default_class']) ? $param['default_class'] : 'tab_bg_2';
+                    $row['class'] = $info['scope'] === 'global' ? 'tab_bg_4' : $default_scope_class;
                 } else {
                     $row['class'] = $param['default_class'];
                 }
@@ -3526,7 +4160,7 @@ class Profile extends CommonDBTM
 
                     $columns[$right_value]        = $label;
 
-                    $checked                      = ((($profile_right & $right) == $right) ? 1 : 0);
+                    $checked                      = ((($profile_right & $right) === $right) ? 1 : 0);
                     $row['columns'][$right_value] = ['checked' => $checked];
                     if (!$param['canedit']) {
                         $row['columns'][$right_value]['readonly'] = true;
@@ -3540,11 +4174,11 @@ class Profile extends CommonDBTM
             }
         }
 
-        uksort($columns, function ($a, $b) {
+        uksort($columns, static function ($a, $b) {
             $a = explode('_', $a);
             $b = explode('_', $b);
 
-          // For standard rights sort by right
+            // For standard rights sort by right
             if (($a[0] < 1024) || ($b[0] < 1024)) {
                 if ($a[0] > $b[0]) {
                     return 1;
@@ -3554,7 +4188,7 @@ class Profile extends CommonDBTM
                 }
             }
 
-          // For extra right sort by type
+            // For extra right sort by type
             if ($a[1] > $b[1]) {
                  return 1;
             }
@@ -3574,14 +4208,13 @@ class Profile extends CommonDBTM
         );
     }
 
-
     /**
      * Get right linear right choice.
      *
      * @since 0.85
      *
-     * @param $elements  array   all pair identifier => label
-     * @param $options   array   possible:
+     * @param array $elements all pair identifier => label
+     * @param array $options possible:
      *             'canedit'
      *             'field'         name of the HTML field
      *             'value'         the value inside the database
@@ -3592,7 +4225,7 @@ class Profile extends CommonDBTM
      *             'display'
      *             'check_method'  method used to check the right
      *
-     * @return content if !display
+     * @return string|void Return generated content if `display` parameter is true.
      **/
     public static function getLinearRightChoice(array $elements, array $options = [])
     {
@@ -3606,9 +4239,7 @@ class Profile extends CommonDBTM
         $param['rand']          = mt_rand();
         $param['zero_on_empty'] = true;
         $param['display']       = true;
-        $param['check_method']  = function ($element, $field) {
-            return (($field & $element) == $element);
-        };
+        $param['check_method']  = static fn ($element, $field) => (($field & $element) === $element);
 
         if (is_array($options) && count($options)) {
             foreach ($options as $key => $val) {
@@ -3622,9 +4253,9 @@ class Profile extends CommonDBTM
 
         $nb_cbs      = count($elements);
         $cb_options  = ['readonly' => !$param['canedit']];
+        $massive_tag = 'checkall_' . $param['field'] . '_' . $param['rand'];
         if ($param['check_all']) {
             $nb_cbs++;
-            $massive_tag                = 'checkall_' . $param['field'] . '_' . $param['rand'];
             $cb_options['massive_tags'] = $massive_tag;
         }
 
@@ -3636,8 +4267,8 @@ class Profile extends CommonDBTM
         $count            = 0;
         $nb_checked       = 0;
         foreach ($elements as $element => $label) {
-            if ($count != 0) {
-                if (($count % $nb_item_per_line) == 0) {
+            if ($count !== 0) {
+                if (($count % $nb_item_per_line) === 0) {
                     $out .= "<br>\n";
                 } else {
                     $out .= "&nbsp;-\n\t\t&nbsp;";
@@ -3664,13 +4295,14 @@ class Profile extends CommonDBTM
         }
 
         if ($param['check_all']) {
-            $cb_options = ['criterion' => ['tag_for_massive' => $massive_tag],
+            $cb_options = [
+                'criterion' => ['tag_for_massive' => $massive_tag],
                 'id'        => Html::cleanId('checkbox_linear_' . $param['rand'])
             ];
             if ($nb_checked > (count($elements) / 2)) {
                 $cb_options['checked'] = true;
             }
-            $out .= "&nbsp;-&nbsp;<i><b>" . __('Select/unselect all') . "</b></i>&nbsp;" .
+            $out .= "&nbsp;-&nbsp;<i><b>" . __s('Select/unselect all') . "</b></i>&nbsp;" .
                   Html::getCheckbox($cb_options);
         }
 
@@ -3681,9 +4313,55 @@ class Profile extends CommonDBTM
         echo $out;
     }
 
-
     public static function getIcon()
     {
         return "ti ti-user-check";
+    }
+
+    /**
+     * Get all super admin profiles ids
+     *
+     * @return array of ids
+     */
+    public static function getSuperAdminProfilesId(): array
+    {
+        $super_admin_profiles = (new self())->find([
+            'id' => new QuerySubQuery([
+                'SELECT' => 'profiles_id',
+                'FROM'   => ProfileRight::getTable(),
+                'WHERE'  => [
+                    'name'   => static::$rightname,
+                    'rights' => ["&", UPDATE],
+                ]
+            ]),
+            'interface' => 'central',
+        ]);
+
+        return array_column($super_admin_profiles, 'id');
+    }
+
+    /**
+     * Check if this profile is the last super-admin profile (a "super-admin
+     * profile" is a profile that can edit other profiles)
+     *
+     * @return bool
+     */
+    public function isLastSuperAdminProfile(): bool
+    {
+        $profiles_ids = self::getSuperAdminProfilesId();
+        return
+            count($profiles_ids) === 1 // Only one super admin
+            && $profiles_ids[0] === $this->fields['id'] // Id match this account
+        ;
+    }
+
+    public function canPurgeItem(): bool
+    {
+        // We can't delete the last super admin profile
+        if ($this->isLastSuperAdminProfile()) {
+            return false;
+        }
+
+        return true;
     }
 }

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,23 +33,7 @@
  * ---------------------------------------------------------------------
  */
 
-include('../inc/includes.php');
-
-if (!basename($_SERVER['SCRIPT_NAME']) == "helpdesk.faq.php") {
-    Session::checkLoginUser();
-}
-
-/** @global array $_UGET */
-
 // Manage tabs
-if (isset($_GET['tab']) && isset($_GET['itemtype'])) {
-    $tabs = Toolbox::getAvailablesTabs($_UGET['itemtype'], $_GET['id'] ?? null);
-    $current      = 0;
-    foreach (array_keys($tabs) as $key) {
-        if ($current == $_GET['tab']) {
-            Session::setActiveTab($_UGET['itemtype'], $key);
-            break;
-        }
-        $current++;
-    }
+if (isset($_GET['itemtype']) && isset($_GET['tab_key'])) {
+    Session::setActiveTab($_GET['itemtype'], $_GET['tab_key']);
 }

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -37,28 +37,23 @@
  * @since 9.2
  */
 
-$AJAX_INCLUDE = 1;
+/** @var \Glpi\Controller\LegacyFileLoadController $this */
+$this->setAjax();
 
-include('../inc/includes.php');
 header("Content-Type: application/json; charset=UTF-8");
 Html::header_nocache();
-
-Session::checkLoginUser();
 
 if (isset($_POST['projecttasktemplates_id']) && ($_POST['projecttasktemplates_id'] > 0)) {
     $template = new ProjectTaskTemplate();
     $template->getFromDB($_POST['projecttasktemplates_id']);
 
-    if (DropdownTranslation::isDropdownTranslationActive()) {
-        $template->fields['content'] = DropdownTranslation::getTranslatedValue(
-            $template->getID(),
-            $template->getType(),
-            'content',
-            $_SESSION['glpilanguage'],
-            $template->fields['content']
-        );
-    }
+    $template->fields['description'] = DropdownTranslation::getTranslatedValue(
+        $template->getID(),
+        $template->getType(),
+        'description',
+        $_SESSION['glpilanguage'],
+        $template->fields['description']
+    );
 
-    $template->fields = array_map('html_entity_decode', $template->fields);
     echo json_encode($template->fields);
 }

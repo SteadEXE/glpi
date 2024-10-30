@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -64,6 +64,7 @@ class PendingReasonCron extends CommonDBTM
      */
     public static function cronPendingreason_autobump_autosolve(CronTask $task)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $config = Config::getConfigurationValues('core', ['system_user']);
@@ -113,28 +114,21 @@ class PendingReasonCron extends CommonDBTM
                 continue;
             }
 
+            // Load pending reason
+            $pending_reason = PendingReason::getById($pending_item->fields['pendingreasons_id']);
+            if (!$pending_reason) {
+                trigger_error("Failed to load PendingReason", E_USER_WARNING);
+                continue;
+            }
+
             $next_bump = $pending_item->getNextFollowupDate();
             $resolve = $pending_item->getAutoResolvedate();
 
             if ($next_bump && $now > $next_bump) {
-               // Load pending reason
-                $pending_reason = PendingReason::getById($pending_item->fields['pendingreasons_id']);
-                if (!$pending_reason) {
-                    trigger_error("Failed to load PendingReason", E_USER_WARNING);
-                    continue;
-                }
-
                 $template_id = $pending_reason->fields['itilfollowuptemplates_id'];
 
                 // No template defined; can't bump
                 if (!$template_id) {
-                    continue;
-                }
-
-                // Load followup template
-                $fup_template = ITILFollowupTemplate::getById($template_id);
-                if (!$fup_template) {
-                    trigger_error("Failed to load ITILFollowupTemplate::{$pending_reason->fields['itilfollowuptemplates_id']}", E_USER_WARNING);
                     continue;
                 }
 
@@ -145,45 +139,42 @@ class PendingReasonCron extends CommonDBTM
                 ]);
 
                 if (!$success) {
-                     trigger_error("Can't bump, unable to update pending item", E_USER_WARNING);
-                     continue;
-                }
-
-               // Add bump (new followup from template)
-                $fup = new ITILFollowup();
-                $fup->add([
-                    'itemtype' => $item::getType(),
-                    'items_id' => $item->getID(),
-                    'users_id' => $config['system_user'],
-                    'content' => addslashes($fup_template->fields['content']),
-                    'is_private' => $fup_template->fields['is_private'],
-                    'requesttypes_id' => $fup_template->fields['requesttypes_id'],
-                    'timeline_position' => CommonITILObject::TIMELINE_RIGHT,
-                ]);
-                $task->addVolume(1);
-            } else if ($resolve && $now > $resolve) {
-               // Load pending reason
-                $pending_reason = PendingReason::getById($pending_item->fields['pendingreasons_id']);
-                if (!$pending_reason) {
-                    trigger_error("Failed to load PendingReason", E_USER_WARNING);
+                    trigger_error("Can't bump, unable to update pending item", E_USER_WARNING);
                     continue;
                 }
 
-               // Load solution template
+                // Add reminder (new ITILReminder)
+                $reminder = new ITILReminder();
+                $reminder->add([
+                    'itemtype' => $item::getType(),
+                    'items_id' => $item->getID(),
+                    'pendingreasons_id' => $pending_reason->getID(),
+                    'name' => $pending_reason->fields['name'],
+                    'content' => ITILFollowupTemplate::getById(
+                        $pending_reason->fields['itilfollowuptemplates_id']
+                    )->getRenderedContent($item),
+                ]);
+                $task->addVolume(1);
+
+                // Send notification
+                \NotificationEvent::raiseEvent('auto_reminder', $item);
+            } else if ($resolve && $now > $resolve) {
+                // Load solution template
                 $solution_template = SolutionTemplate::getById($pending_reason->fields['solutiontemplates_id']);
                 if (!$solution_template) {
                     trigger_error("Failed to load SolutionTemplate::{$pending_reason->fields['solutiontemplates_id']}", E_USER_WARNING);
                     continue;
                 }
 
-               // Add solution
+                // Add solution
                 $solution = new ITILSolution();
                 $solution->add([
-                    'itemtype'         => $item::getType(),
-                    'items_id'         => $item->getID(),
-                    'solutiontypes_id' => $solution_template->fields['solutiontypes_id'],
-                    'content'          => addslashes($solution_template->fields['content']),
-                    'users_id'         => $config['system_user'],
+                    'itemtype'             => $item::getType(),
+                    'items_id'             => $item->getID(),
+                    'solutiontypes_id'     => $solution_template->fields['solutiontypes_id'],
+                    'content'              => $solution_template->getRenderedContent($item),
+                    'users_id'             => $config['system_user'],
+                    '_disable_auto_assign' => true,
                 ]);
                 $task->addVolume(1);
             }

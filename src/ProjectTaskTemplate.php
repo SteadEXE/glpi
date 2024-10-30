@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -99,13 +99,18 @@ class ProjectTaskTemplate extends CommonDropdown
                 'label' => __('Effective duration'),
                 'type'  => 'actiontime'
             ],
-            ['name'  => 'description',
-                'label' => __('Description'),
-                'type'  => 'tinymce'
-            ],
             ['name'  => 'comments',
                 'label' => __('Comments'),
                 'type'  => 'textarea'
+            ],
+            ['name'  => 'description',
+                'label' => __('Description'),
+                'type'  => 'tinymce',
+                // Images should remains in base64 in templates.
+                // When an element will be created from a template, tinymce will catch the base64 image and trigger the
+                // document upload process.
+                'convert_images_to_documents' => false,
+
             ],
         ];
     }
@@ -135,7 +140,7 @@ class ProjectTaskTemplate extends CommonDropdown
             'id'       => '6',
             'name'     => __('As child of'),
             'field'    => 'name',
-            'table'    => 'glpi_projects',
+            'table'    => 'glpi_projecttasks',
             'datatype' => 'itemlink',
         ];
 
@@ -144,7 +149,7 @@ class ProjectTaskTemplate extends CommonDropdown
             'name'     => __('Percent done'),
             'field'    => 'percent_done',
             'table'    => $this->getTable(),
-            'datatype' => 'percent',
+            'datatype' => 'progressbar',
         ];
 
         $tab[] = [
@@ -192,7 +197,7 @@ class ProjectTaskTemplate extends CommonDropdown
             'name'     => __('Planned duration'),
             'field'    => 'planned_duration',
             'table'    => $this->getTable(),
-            'datatype' => 'actiontime',
+            'datatype' => 'timestamp',
         ];
 
         $tab[] = [
@@ -200,7 +205,7 @@ class ProjectTaskTemplate extends CommonDropdown
             'name'     => __('Effective duration'),
             'field'    => 'effective_duration',
             'table'    => $this->getTable(),
-            'datatype' => 'actiontime',
+            'datatype' => 'timestamp',
         ];
 
         $tab[] = [
@@ -208,7 +213,8 @@ class ProjectTaskTemplate extends CommonDropdown
             'name'     => __('Description'),
             'field'    => 'description',
             'table'    => $this->getTable(),
-            'datatype' => 'textarea',
+            'datatype' => 'text',
+            'htmltext' => true,
         ];
 
         return $tab;
@@ -241,21 +247,6 @@ class ProjectTaskTemplate extends CommonDropdown
                 ]);
                 break;
         }
-    }
-
-
-    public static function getSpecificValueToDisplay($field, $values, array $options = [])
-    {
-
-        if (!is_array($values)) {
-            $values = [$field => $values];
-        }
-        switch ($field) {
-            case 'type':
-                $types = self::getTypes();
-                return $types[$values[$field]];
-        }
-        return parent::getSpecificValueToDisplay($field, $values, $options);
     }
 
 

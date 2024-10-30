@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,6 +34,7 @@
  */
 
 use Glpi\Application\View\TemplateRenderer;
+use Glpi\Features\AssignableItem;
 
 /**
  * Rack Class
@@ -41,6 +42,12 @@ use Glpi\Application\View\TemplateRenderer;
 class Rack extends CommonDBTM
 {
     use Glpi\Features\DCBreadcrumb;
+    use Glpi\Features\State;
+    use AssignableItem {
+        prepareInputForAdd as prepareInputForAddAssignableItem;
+        prepareInputForUpdate as prepareInputForUpdateAssignableItem;
+        getEmpty as getEmptyAssignableItem;
+    }
 
     const FRONT    = 0;
     const REAR     = 1;
@@ -65,6 +72,11 @@ class Rack extends CommonDBTM
         return _n('Rack', 'Racks', $nb);
     }
 
+    public static function getSectorizedDetails(): array
+    {
+        return ['assets', self::class];
+    }
+
     public function defineTabs($options = [])
     {
         $ong = [];
@@ -75,9 +87,10 @@ class Rack extends CommonDBTM
          ->addStandardTab('Infocom', $ong, $options)
          ->addStandardTab('Contract_Item', $ong, $options)
          ->addStandardTab('Document_Item', $ong, $options)
-         ->addStandardTab('Ticket', $ong, $options)
+         ->addStandardTab('Item_Ticket', $ong, $options)
          ->addStandardTab('Item_Problem', $ong, $options)
          ->addStandardTab('Change_Item', $ong, $options)
+         ->addStandardTab('Reservation', $ong, $options)
          ->addStandardTab('Log', $ong, $options);
         return $ong;
     }
@@ -176,11 +189,11 @@ class Rack extends CommonDBTM
 
         $tab[] = [
             'id'                 => '31',
-            'table'              => 'glpi_states',
+            'table'              => State::getTable(),
             'field'              => 'completename',
             'name'               => __('Status'),
             'datatype'           => 'dropdown',
-            'condition'          => ['is_visible_rack' => 1]
+            'condition'          => $this->getStateVisibilityCriteria()
         ];
 
         $tab[] = [
@@ -254,7 +267,7 @@ class Rack extends CommonDBTM
             'table'              => 'glpi_users',
             'field'              => 'name',
             'linkfield'          => 'users_id_tech',
-            'name'               => __('Technician in charge of the hardware'),
+            'name'               => __('Technician in charge'),
             'datatype'           => 'dropdown',
             'right'              => 'own_ticket'
         ];
@@ -263,9 +276,20 @@ class Rack extends CommonDBTM
             'id'                 => '49',
             'table'              => 'glpi_groups',
             'field'              => 'completename',
-            'linkfield'          => 'groups_id_tech',
-            'name'               => __('Group in charge of the hardware'),
+            'linkfield'          => 'groups_id',
+            'name'               => __('Group in charge'),
             'condition'          => ['is_assign' => 1],
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_groups_items',
+                    'joinparams'         => [
+                        'jointype'           => 'itemtype_item',
+                        'condition'          => ['NEWTABLE.type' => Group_Item::GROUP_TYPE_TECH]
+                    ]
+                ]
+            ],
+            'forcegroupby'       => true,
+            'massiveaction'      => false,
             'datatype'           => 'dropdown'
         ];
 
@@ -288,6 +312,48 @@ class Rack extends CommonDBTM
             'datatype'           => 'dropdown'
         ];
 
+        $tab[] = [
+            'id'                 => '70',
+            'table'              => 'glpi_users',
+            'field'              => 'name',
+            'name'               => User::getTypeName(1),
+            'datatype'           => 'dropdown',
+            'right'              => 'all'
+        ];
+
+        $tab[] = [
+            'id'                 => '71',
+            'table'              => 'glpi_groups',
+            'field'              => 'completename',
+            'name'               => Group::getTypeName(1),
+            'condition'          => ['is_itemgroup' => 1],
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_groups_items',
+                    'joinparams'         => [
+                        'jointype'           => 'itemtype_item',
+                        'condition'          => ['NEWTABLE.type' => Group_Item::GROUP_TYPE_NORMAL]
+                    ]
+                ]
+            ],
+            'forcegroupby'       => true,
+            'massiveaction'      => false,
+            'datatype'           => 'dropdown'
+        ];
+
+        $tab[] = [
+            'id'                 => '85',
+            'table'              => Datacenter::getTable(),
+            'field'              => 'name',
+            'name'               => Datacenter::getTypeName(1),
+            'datatype'           => 'dropdown',
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => DCRoom::getTable(),
+                ]
+            ]
+        ];
+
         $tab = array_merge($tab, Notepad::rawSearchOptionsToAdd());
 
         $tab = array_merge($tab, Datacenter::rawSearchOptionsToAdd(get_class($this)));
@@ -297,9 +363,8 @@ class Rack extends CommonDBTM
 
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0)
     {
-
-        switch ($item->getType()) {
-            case DCRoom::getType():
+        switch (get_class($item)) {
+            case DCRoom::class:
                 $nb = 0;
                 if ($_SESSION['glpishow_count_on_tabs']) {
                     $nb = countElementsInTable(
@@ -312,9 +377,9 @@ class Rack extends CommonDBTM
                 }
                 return self::createTabEntry(
                     self::getTypeName(Session::getPluralNumber()),
-                    $nb
+                    $nb,
+                    $item::getType()
                 );
-             break;
         }
         return '';
     }
@@ -338,7 +403,11 @@ class Rack extends CommonDBTM
      **/
     public static function showForRoom(DCRoom $room)
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $room_id = $room->getID();
         $rand = mt_rand();
@@ -371,8 +440,8 @@ class Rack extends CommonDBTM
         );
 
         echo "<div id='switchview'>";
-        echo "<i id='sviewlist' class='pointer ti ti-list' title='" . __('View as list') . "'></i>";
-        echo "<i id='sviewgraph' class='pointer ti ti-layout-grid selected' title='" . __('View graphical representation') . "'></i>";
+        echo "<i id='sviewlist' class='pointer ti ti-list' title='" . __s('View as list') . "'></i>";
+        echo "<i id='sviewgraph' class='pointer ti ti-layout-grid selected' title='" . __s('View graphical representation') . "'></i>";
         echo "</div>";
 
         $racks = iterator_to_array($racks);
@@ -380,7 +449,7 @@ class Rack extends CommonDBTM
 
         $rack = new self();
         if (!count($racks)) {
-            echo "<table class='tab_cadre_fixe'><tr><th>" . __('No rack found') . "</th></tr>";
+            echo "<table class='tab_cadre_fixe'><tr><th>" . __s('No rack found') . "</th></tr>";
             echo "</table>";
         } else {
             if ($canedit) {
@@ -399,7 +468,7 @@ class Rack extends CommonDBTM
                 $header .= Html::getCheckAllAsCheckbox('mass' . __CLASS__ . $rand);
                 $header .= "</th>";
             }
-            $header .= "<th>" . __('Name') . "</th>";
+            $header .= "<th>" . __s('Name') . "</th>";
             $header .= "</tr>";
 
             echo $header;
@@ -432,8 +501,8 @@ class Rack extends CommonDBTM
         $rows     = (int) $room->fields['vis_rows'];
         $cols     = (int) $room->fields['vis_cols'];
         $w_prct   = 100 / $cols;
-        $cell_w   = 40;
-        $cell_h   = 39;
+        $cell_w   = (int) $room->fields['vis_cell_width'];
+        $cell_h   = (int) $room->fields['vis_cell_height'];
         $grid_w   = $cell_w * $cols;
         $grid_h   = $cell_h * $rows;
         $ajax_url = $CFG_GLPI['root_doc'] . "/ajax/rack.php";
@@ -449,8 +518,8 @@ class Rack extends CommonDBTM
             $coord = explode(',', $item['position']);
             if (is_array($coord) && count($coord) == 2) {
                 list($x, $y) = $coord;
-                $item['_x'] = $x - 1;
-                $item['_y'] = $y - 1;
+                $item['_x'] = (int)$x - 1;
+                $item['_y'] = (int)$y - 1;
             } else {
                 $item['_x'] = null;
                 $item['_y'] = null;
@@ -468,7 +537,7 @@ class Rack extends CommonDBTM
 
         if (count($outbound)) {
             echo "<table class='outbound'><thead><th>";
-            echo __('Following elements are out of room bounds');
+            echo __s('Following elements are out of room bounds');
             echo "</th></thead><tbody>";
             foreach ($outbound as $out) {
                 $rack->getFromResultSet($out);
@@ -569,7 +638,7 @@ class Rack extends CommonDBTM
                $('#viewgraph').toggleClass('clear_grid');
             })
 
-         GridStack.init({
+         window.dcroom_grid = GridStack.init({
             column: $cols,
             maxRow: ($rows + 1),
             cellHeight: {$cell_h},
@@ -599,56 +668,63 @@ class Rack extends CommonDBTM
          var x_before_drag = 0;
          var y_before_drag = 0;
          var dirty = false;
+         var is_dragged = false;
 
-         $('.grid-stack')
-            .on('change', function(event, items) {
-               if (dirty) {
-                  return;
-               }
-               var grid = $(event.target).data('gridstack');
+         window.dcroom_grid.on('change', function(event, items) {
+           if (dirty) {
+              return;
+           }
+           var grid = $(event.target).data('gridstack');
 
-               $.each(items, function(index, item) {
-                  $.post('{$ajax_url}', {
-                     id: item.id,
-                     dcrooms_id: $room_id,
-                     action: 'move_rack',
-                     x: $(item.el).attr('gs-x') + 1,
-                     y: $(item.el).attr('gs-y') + 1,
-                  }, function(answer) {
-                     var answer = jQuery.parseJSON(answer);
+           $.each(items, function(index, item) {
+              $.post('{$ajax_url}', {
+                 id: item.id,
+                 dcrooms_id: $room_id,
+                 action: 'move_rack',
+                 x: item.x + 1,
+                 y: item.y + 1,
+              }, function(answer) {
+                 // revert to old position
+                 if (!answer.status) {
+                    dirty = true;
+                    grid.update(item.el, {
+                       'x': x_before_drag,
+                       'y': y_before_drag
+                    });
+                    dirty = false;
+                    displayAjaxMessageAfterRedirect();
+                 }
+              });
+           });
+         })
+        .on('dragstart', function(event, ui) {
+            is_dragged = true;
+            var element = $(event.target);
+            var node    = element[0].gridstackNode;
 
-                     // revert to old position
-                     if (!answer.status) {
-                        dirty = true;
-                        grid.update(item.el, {
-                           'x': x_before_drag,
-                           'y': y_before_drag
-                        });
-                        dirty = false;
-                        displayAjaxMessageAfterRedirect();
-                     }
-                  });
-               });
-            })
-            .on('dragstart', function(event, ui) {
-               var element = $(event.target);
-               var node    = element.data('_gridstack_node');
+            // store position before drag
+            x_before_drag = Number(node.x);
+            y_before_drag = Number(node.y);
 
-               // store position before drag
-               x_before_drag = Number(node.x);
-               y_before_drag = Number(node.y);
+            // disable qtip
+            element.qtip('hide', true);
+        })
+        .on('dragstop', function(event, ui) {
+            setTimeout(() => { // prevent unwanted click (cannot find another way)
+                is_dragged = false;
+            }, 50);
+        })
 
-               // disable qtip
-               element.qtip('hide', true);
-            })
+
+        $('.grid-stack')
             .on('click', function(event, ui) {
-               var grid    = this;
-               var element = $(event.target);
-               var el_url  = element.find('a').attr('href');
+                var grid    = this;
+                var element = $(event.target);
+                var el_url  = element.find('a').attr('href');
 
-               if (el_url) {
-                  window.location = el_url;
-               }
+                if (el_url && !is_dragged) {
+                    window.location = el_url;
+                }
             });
 
 
@@ -696,12 +772,19 @@ JAVASCRIPT;
 
     public function prepareInputForAdd($input)
     {
+        $input = $this->prepareInputForAddAssignableItem($input);
+        if ($input === false) {
+            return false;
+        }
         if ($this->prepareInput($input)) {
             if (isset($input["id"]) && ($input["id"] > 0)) {
                 $input["_oldID"] = $input["id"];
             }
             unset($input['id']);
             unset($input['withtemplate']);
+            if (!isset($input['bgcolor']) || empty($input['bgcolor'])) {
+                $input['bgcolor'] = '#FEC95C';
+            }
 
             return $input;
         }
@@ -710,6 +793,13 @@ JAVASCRIPT;
 
     public function prepareInputForUpdate($input)
     {
+        $input = $this->prepareInputForUpdateAssignableItem($input);
+        if ($input === false) {
+            return false;
+        }
+        if (array_key_exists('bgcolor', $input) && empty($input['bgcolor'])) {
+            $input['bgcolor'] = '#FEC95C';
+        }
         return $this->prepareInput($input);
     }
 
@@ -723,7 +813,7 @@ JAVASCRIPT;
      *
      * @param array $input Input data
      *
-     * @return array
+     * @return false|array
      */
     private function prepareInput($input)
     {
@@ -734,9 +824,8 @@ JAVASCRIPT;
         }
 
         if ($input['position'] == 0) {
-            return $input;
             Session::addMessageAfterRedirect(
-                __('Position must be set'),
+                __s('Position must be set'),
                 true,
                 ERROR
             );
@@ -756,10 +845,10 @@ JAVASCRIPT;
 
         if ($existing > 0) {
             Session::addMessageAfterRedirect(
-                sprintf(
+                htmlescape(sprintf(
                     __('%1$s position is not available'),
                     $input['position']
-                ),
+                )),
                 true,
                 ERROR
             );
@@ -771,12 +860,14 @@ JAVASCRIPT;
     /**
      * Get already filled places
      *
-     * @param string $current Current position to exclude; defaults to null
+     * @param string $itemtype Item type
+     * @param int    $items_id Item ID
      *
      * @return array [x => [left => [depth, depth, depth, depth]], [right => [depth, depth, depth, depth]]]
      */
     public function getFilled($itemtype = null, $items_id = null)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $iterator = $DB->request([
@@ -795,9 +886,9 @@ JAVASCRIPT;
             $units = 1;
             $width = 1;
             $depth = 1;
-            if ($item->fields[strtolower($item->getType()) . 'models_id'] != 0) {
-                $model_class = $item->getType() . 'Model';
-                $modelsfield = strtolower($item->getType()) . 'models_id';
+            $model_class = $item->getType() . 'Model';
+            $modelsfield = $model_class::getForeignKeyField();
+            if ($item->fields[$modelsfield] != 0) {
                 $model = new $model_class();
                 if ($model->getFromDB($item->fields[$modelsfield])) {
                     $units = $model->fields['required_units'];
@@ -858,7 +949,7 @@ JAVASCRIPT;
 
     public function getEmpty()
     {
-        if (!parent::getEmpty()) {
+        if (!$this->getEmptyAssignableItem() || !parent::getEmpty()) {
             return false;
         }
         $this->fields['number_units'] = 42;
@@ -886,33 +977,33 @@ JAVASCRIPT;
      */
     private static function getCell(Rack $rack, $cell)
     {
-        $bgcolor = $rack->getField('bgcolor');
-        $fgcolor = Html::getInvertedColor($bgcolor);
-        return "<div class='grid-stack-item room_orientation_" . $cell['room_orientation'] . "'
-                  gs-id='" . $cell['id'] . "'
+        $bgcolor = htmlescape($rack->getField('bgcolor'));
+        $fgcolor = htmlescape(Html::getInvertedColor($bgcolor));
+        return "<div class='grid-stack-item room_orientation_" . htmlescape($cell['room_orientation']) . "'
+                  gs-id='" . htmlescape($cell['id']) . "'
                   gs-locked='true'
                   gs-h='1'
                   gs-w='1'
-                  gs-x='" . $cell['_x'] . "'
-                  gs-y='" . $cell['_y'] . "'>
+                  gs-x='" . htmlescape($cell['_x']) . "'
+                  gs-y='" . htmlescape($cell['_y']) . "'>
             <div class='grid-stack-item-content'
                   style='background-color: $bgcolor;
                         color: $fgcolor;'>
                <a href='" . $rack->getLinkURL() . "'
                   style='color: $fgcolor'>" .
-                  $cell['name'] . "</a>
+                  htmlescape($cell['name']) . "</a>
                <span class='tipcontent'>
                   <span>
-                     <label>" . __('name') . ":</label>" .
-                     $cell['name'] . "
+                     <label>" . __s('name') . ":</label>" .
+                     htmlescape($cell['name']) . "
                   </span>
                   <span>
-                     <label>" . __('serial') . ":</label>" .
-                     $cell['serial'] . "
+                     <label>" . __s('serial') . ":</label>" .
+                     htmlescape($cell['serial']) . "
                   </span>
                   <span>
-                     <label>" . __('Inventory number') . ":</label>" .
-                     $cell['otherserial'] . "
+                     <label>" . __s('Inventory number') . ":</label>" .
+                     htmlescape($cell['otherserial']) . "
                   </span>
                </span>
             </div><!-- // .grid-stack-item-content -->

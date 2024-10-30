@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -41,6 +41,7 @@ class NotificationTargetUser extends NotificationTarget
         return [
             'passwordexpires' => __('Password expires'),
             'passwordforget'  => __('Forgotten password?'),
+            'passwordinit'    => __('Password initialization'),
         ];
     }
 
@@ -55,6 +56,16 @@ class NotificationTargetUser extends NotificationTarget
         if ($this->raiseevent == 'passwordexpires') {
             parent::addNotificationTargets($entity);
         }
+    }
+
+    protected function canNotificationBeDisabled(string $event): bool
+    {
+        if (in_array($event, ['passwordinit', 'passwordforget', 'passwordexpires'])) {
+            // Notifications related to passwords should never be disabled.
+            return false;
+        }
+
+        return true;
     }
 
 
@@ -88,6 +99,7 @@ class NotificationTargetUser extends NotificationTarget
 
     public function addDataForTemplate($event, $options = [])
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $events = $this->getEvents();
@@ -127,8 +139,14 @@ class NotificationTargetUser extends NotificationTarget
                 break;
             case 'passwordforget':
                 $this->data['##user.token##']             = $this->obj->getField("password_forget_token");
-                $this->data['##user.passwordforgeturl##'] = urldecode($CFG_GLPI["url_base"]
+                $this->data['##user.passwordforgeturl##'] = urldecode($this->getUrlBase()
                 . "/front/lostpassword.php?password_forget_token="
+                . $this->obj->getField("password_forget_token"));
+                break;
+            case 'passwordinit':
+                $this->data['##user.token##']           = $this->obj->getField("password_forget_token");
+                $this->data['##user.passwordiniturl##'] = urldecode($CFG_GLPI["url_base"]
+                . "/front/initpassword.php?password_forget_token="
                 . $this->obj->getField("password_forget_token"));
                 break;
         }
@@ -206,6 +224,17 @@ class NotificationTargetUser extends NotificationTarget
                 $lang_tags = [
                     'passwordforget.information' => __('You have been made a request to reset your account password.'),
                     'passwordforget.link'        => __('Just follow this link (you have one day):'),
+                ];
+                break;
+            case 'passwordinit':
+                $values_tags = [
+                    'user.token'           => __('Token'),
+                    'user.passwordiniturl' => __('URL'),
+                ];
+
+                $lang_tags = [
+                    'passwordinit.information' => __('Your account has just been created. Please set your password.'),
+                    'passwordinit.link'        => __('Just follow this link:'),
                 ];
                 break;
         }

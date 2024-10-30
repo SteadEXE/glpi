@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -39,6 +39,76 @@
 abstract class CommonDBVisible extends CommonDBTM
 {
     /**
+     * Entities on which item is visible.
+     * Keys are ID, values are DB fields values.
+     * @var array
+     */
+    protected $entities = [];
+
+    /**
+     * Groups for whom item is visible.
+     * Keys are ID, values are DB fields values.
+     * @var array
+     */
+    protected $groups = [];
+
+    /**
+     * Profiles for whom item is visible.
+     * Keys are ID, values are DB fields values.
+     * @var array
+     */
+    protected $profiles = [];
+
+    /**
+     * Users for whom item is visible.
+     * Keys are ID, values are DB fields values.
+     * @var array
+     */
+    protected $users = [];
+
+    public function __get(string $property)
+    {
+        // TODO Deprecate access to variables in GLPI 11.0.
+        $value = null;
+        switch ($property) {
+            case 'entities':
+            case 'groups':
+            case 'profiles':
+            case 'users':
+                $value = $this->$property;
+                break;
+            default:
+                $trace = debug_backtrace();
+                trigger_error(
+                    sprintf('Undefined property: %s::%s in %s on line %d', __CLASS__, $property, $trace[0]['file'], $trace[0]['line']),
+                    E_USER_WARNING
+                );
+                break;
+        }
+        return $value;
+    }
+
+    public function __set(string $property, $value)
+    {
+        // TODO Deprecate access to variables in GLPI 11.0.
+        switch ($property) {
+            case 'entities':
+            case 'groups':
+            case 'profiles':
+            case 'users':
+                $this->$property = $value;
+                break;
+            default:
+                $trace = debug_backtrace();
+                trigger_error(
+                    sprintf('Undefined property: %s::%s in %s on line %d', __CLASS__, $property, $trace[0]['file'], $trace[0]['line']),
+                    E_USER_WARNING
+                );
+                break;
+        }
+    }
+
+    /**
      * Is the login user have access to item based on visibility configuration
      *
      * @since 0.83
@@ -66,7 +136,7 @@ abstract class CommonDBVisible extends CommonDBTM
                 foreach ($data as $group) {
                     if (in_array($group['groups_id'], $_SESSION["glpigroups"])) {
                       // All the group
-                        if ($group['entities_id'] < 0) {
+                        if ($group['no_entity_restriction']) {
                              return true;
                         }
                       // Restrict to entities
@@ -101,7 +171,7 @@ abstract class CommonDBVisible extends CommonDBTM
             if (isset($this->profiles[$_SESSION["glpiactiveprofile"]['id']])) {
                 foreach ($this->profiles[$_SESSION["glpiactiveprofile"]['id']] as $profile) {
                     // All the profile
-                    if ($profile['entities_id'] < 0) {
+                    if ($profile['no_entity_restriction']) {
                         return true;
                     }
                     // Restrict to entities
@@ -141,13 +211,14 @@ abstract class CommonDBVisible extends CommonDBTM
      **/
     public function showVisibility()
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
-        $ID      = $this->fields['id'];
+        $ID      = htmlescape($this->fields['id']);
         $canedit = $this->canEdit($ID);
         $rand    = mt_rand();
         $nb      = $this->countVisibilities();
-        $str_type = strtolower($this::getType());
+        $str_type = htmlescape(strtolower($this::getType()));
         $fk = static::getForeignKeyField();
 
         if ($canedit) {
@@ -156,7 +227,7 @@ abstract class CommonDBVisible extends CommonDBTM
             echo " method='post' action='" . static::getFormURL() . "'>";
             echo "<input type='hidden' name='{$fk}' value='$ID'>";
             echo "<table class='tab_cadre_fixe'>";
-            echo "<tr class='tab_bg_1'><th colspan='4'>" . __('Add a target') . "</tr>";
+            echo "<tr class='tab_bg_1'><th colspan='4'>" . __s('Add a target') . "</tr>";
             echo "<tr class='tab_bg_1'><td class='tab_bg_2' width='100px'>";
 
             $types   = ['Entity', 'Group', 'Profile', 'User'];
@@ -206,8 +277,8 @@ abstract class CommonDBVisible extends CommonDBTM
             $header_bottom .= Html::getCheckAllAsCheckbox('mass' . __CLASS__ . $rand);
             $header_end    .= "</th>";
         }
-        $header_end .= "<th>" . _n('Type', 'Types', 1) . "</th>";
-        $header_end .= "<th>" . _n('Recipient', 'Recipients', Session::getPluralNumber()) . "</th>";
+        $header_end .= "<th>" . _sn('Type', 'Types', 1) . "</th>";
+        $header_end .= "<th>" . _sn('Recipient', 'Recipients', Session::getPluralNumber()) . "</th>";
         $header_end .= "</tr>";
         echo $header_begin . $header_top . $header_end;
 
@@ -221,8 +292,8 @@ abstract class CommonDBVisible extends CommonDBTM
                         Html::showMassiveActionCheckBox($this::getType() . '_User', $data["id"]);
                         echo "</td>";
                     }
-                    echo "<td>" . User::getTypeName(1) . "</td>";
-                    echo "<td>" . getUserName($data['users_id']) . "</td>";
+                    echo "<td>" . htmlescape(User::getTypeName(1)) . "</td>";
+                    echo "<td>" . htmlescape(getUserName($data['users_id'])) . "</td>";
                     echo "</tr>";
                 }
             }
@@ -238,29 +309,31 @@ abstract class CommonDBVisible extends CommonDBTM
                         Html::showMassiveActionCheckBox('Group_' . $this::getType(), $data["id"]);
                         echo "</td>";
                     }
-                    echo "<td>" . Group::getTypeName(1) . "</td>";
+                    echo "<td>" . htmlescape(Group::getTypeName(1)) . "</td>";
 
                     $names   = Dropdown::getDropdownName('glpi_groups', $data['groups_id'], 1);
                     $entname = sprintf(
-                        __('%1$s %2$s'),
-                        $names["name"],
+                        __s('%1$s %2$s'),
+                        htmlescape($names["name"]),
                         Html::showToolTip($names["comment"], ['display' => false])
                     );
                     if ($data['entities_id'] !== null) {
                         $entname = sprintf(
-                            __('%1$s / %2$s'),
+                            __s('%1$s / %2$s'),
                             $entname,
-                            Dropdown::getDropdownName(
-                                'glpi_entities',
-                                $data['entities_id']
+                            htmlescape(
+                                Dropdown::getDropdownName(
+                                    'glpi_entities',
+                                    $data['entities_id']
+                                )
                             )
                         );
                         if ($data['is_recursive']) {
                              //TRANS: R for Recursive
                              $entname = sprintf(
-                                 __('%1$s %2$s'),
+                                 __s('%1$s %2$s'),
                                  $entname,
-                                 "<span class='b'>(" . __('R') . ")</span>"
+                                 "<span class='b'>(" . __s('R') . ")</span>"
                              );
                         }
                     }
@@ -280,15 +353,15 @@ abstract class CommonDBVisible extends CommonDBTM
                         Html::showMassiveActionCheckBox('Entity_' . $this::getType(), $data["id"]);
                         echo "</td>";
                     }
-                    echo "<td>" . Entity::getTypeName(1) . "</td>";
+                    echo "<td>" . htmlescape(Entity::getTypeName(1)) . "</td>";
                     $names   = Dropdown::getDropdownName('glpi_entities', $data['entities_id'], 1);
                     $tooltip = Html::showToolTip($names["comment"], ['display' => false]);
-                    $entname = sprintf(__('%1$s %2$s'), $names["name"], $tooltip);
+                    $entname = sprintf(__s('%1$s %2$s'), htmlescape($names["name"]), $tooltip);
                     if ($data['is_recursive']) {
                         $entname = sprintf(
-                            __('%1$s %2$s'),
+                            __s('%1$s %2$s'),
                             $entname,
-                            "<span class='b'>(" . __('R') . ")</span>"
+                            "<span class='b'>(" . __s('R') . ")</span>"
                         );
                     }
                     echo "<td>" . $entname . "</td>";
@@ -312,25 +385,27 @@ abstract class CommonDBVisible extends CommonDBTM
                         }
                         echo "</td>";
                     }
-                    echo "<td>" . _n('Profile', 'Profiles', 1) . "</td>";
+                    echo "<td>" . _sn('Profile', 'Profiles', 1) . "</td>";
 
                     $names   = Dropdown::getDropdownName('glpi_profiles', $data['profiles_id'], 1);
                     $tooltip = Html::showToolTip($names["comment"], ['display' => false]);
-                    $entname = sprintf(__('%1$s %2$s'), $names["name"], $tooltip);
+                    $entname = sprintf(__s('%1$s %2$s'), htmlescape($names["name"]), $tooltip);
                     if ($data['entities_id'] !== null) {
                         $entname = sprintf(
-                            __('%1$s / %2$s'),
+                            __s('%1$s / %2$s'),
                             $entname,
-                            Dropdown::getDropdownName(
-                                'glpi_entities',
-                                $data['entities_id']
+                            htmlescape(
+                                Dropdown::getDropdownName(
+                                    'glpi_entities',
+                                    $data['entities_id']
+                                )
                             )
                         );
                         if ($data['is_recursive']) {
                             $entname = sprintf(
-                                __('%1$s %2$s'),
+                                __s('%1$s %2$s'),
                                 $entname,
-                                "<span class='b'>(" . __('R') . ")</span>"
+                                "<span class='b'>(" . __s('R') . ")</span>"
                             );
                         }
                     }
@@ -363,9 +438,16 @@ abstract class CommonDBVisible extends CommonDBTM
      */
     protected function getShowVisibilityDropdownParams()
     {
-        return [
-            'type'  => '__VALUE__',
-            'right' => strtolower($this::getType()) . '_public'
+        $params = [
+            'type'          => '__VALUE__',
+            'right'         => strtolower($this::getType()) . '_public',
         ];
+        if (isset($this->fields['entities_id'])) {
+            $params['entity'] = $this->fields['entities_id'];
+        }
+        if (isset($this->fields['is_recursive'])) {
+            $params['is_recursive'] = $this->fields['is_recursive'];
+        }
+        return $params;
     }
 }

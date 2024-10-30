@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -40,6 +40,10 @@ use Glpi\SocketModel;
 /// Class Cable
 class Cable extends CommonDBTM
 {
+    use Glpi\Features\AssignableItem;
+    use Glpi\Features\Clonable;
+    use Glpi\Features\State;
+
    // From CommonDBTM
     public $dohistory         = true;
     public static $rightname         = 'cable_management';
@@ -47,6 +51,11 @@ class Cable extends CommonDBTM
     public static function getTypeName($nb = 0)
     {
         return _n('Cable', 'Cables', $nb);
+    }
+
+    public static function getSectorizedDetails(): array
+    {
+        return ['assets', self::class];
     }
 
     public static function getFieldLabel()
@@ -59,7 +68,7 @@ class Cable extends CommonDBTM
         $ong = [];
         $this->addDefaultFormTab($ong)
          ->addStandardTab('Infocom', $ong, $options)
-         ->addStandardTab('Ticket', $ong, $options)
+         ->addStandardTab('Item_Ticket', $ong, $options)
          ->addStandardTab('Item_Problem', $ong, $options)
          ->addStandardTab('Change_Item', $ong, $options)
          ->addStandardTab('Log', $ong, $options);
@@ -72,6 +81,16 @@ class Cable extends CommonDBTM
         $this->fields['color'] = '#dddddd';
         $this->fields['itemtype_endpoint_a'] = 'Computer';
         $this->fields['itemtype_endpoint_b'] = 'Computer';
+    }
+
+    public function getCloneRelations(): array
+    {
+        return [
+            Infocom::class,
+            Item_Ticket::class,
+            Item_Problem::class,
+            Change_Item::class,
+        ];
     }
 
     public static function getAdditionalMenuLinks()
@@ -92,7 +111,7 @@ class Cable extends CommonDBTM
     {
         if (static::canView()) {
             return [
-                'socket' => [
+                Socket::class => [
                     'title' => Socket::getTypeName(Session::getPluralNumber()),
                     'page'  => Socket::getSearchURL(false),
                     'links' => [
@@ -102,6 +121,7 @@ class Cable extends CommonDBTM
                 ]
             ];
         }
+        return false;
     }
 
     public function rawSearchOptions()
@@ -258,6 +278,35 @@ class Cable extends CommonDBTM
         ];
 
         $tab[] = [
+            'id'                 => '70',
+            'table'              => 'glpi_users',
+            'field'              => 'name',
+            'name'               => User::getTypeName(1),
+            'datatype'           => 'dropdown',
+            'right'              => 'all'
+        ];
+
+        $tab[] = [
+            'id'                 => '71',
+            'table'              => 'glpi_groups',
+            'field'              => 'completename',
+            'name'               => Group::getTypeName(1),
+            'condition'          => ['is_itemgroup' => 1],
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_groups_items',
+                    'joinparams'         => [
+                        'jointype'           => 'itemtype_item',
+                        'condition'          => ['NEWTABLE.type' => Group_Item::GROUP_TYPE_NORMAL]
+                    ]
+                ]
+            ],
+            'forcegroupby'       => true,
+            'massiveaction'      => false,
+            'datatype'           => 'dropdown'
+        ];
+
+        $tab[] = [
             'id'                 => '19',
             'table'              => $this->getTable(),
             'field'              => 'date_mod',
@@ -271,7 +320,29 @@ class Cable extends CommonDBTM
             'table'              => 'glpi_users',
             'field'              => 'name',
             'linkfield'          => 'users_id_tech',
-            'name'               => __('Technician in charge of the hardware'),
+            'name'               => __('Technician in charge'),
+            'datatype'           => 'dropdown',
+            'right'              => 'own_ticket'
+        ];
+
+        $tab[] = [
+            'id'                 => '49',
+            'table'              => 'glpi_groups',
+            'field'              => 'completename',
+            'linkfield'          => 'groups_id',
+            'name'               => __('Group in charge'),
+            'condition'          => ['is_assign' => 1],
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_groups_items',
+                    'joinparams'         => [
+                        'jointype'           => 'itemtype_item',
+                        'condition'          => ['NEWTABLE.type' => Group_Item::GROUP_TYPE_TECH]
+                    ]
+                ]
+            ],
+            'forcegroupby'       => true,
+            'massiveaction'      => false,
             'datatype'           => 'dropdown'
         ];
 
@@ -286,11 +357,11 @@ class Cable extends CommonDBTM
 
         $tab[] = [
             'id'                 => '31',
-            'table'              => 'glpi_states',
+            'table'              => State::getTable(),
             'field'              => 'completename',
             'name'               => __('Status'),
             'datatype'           => 'dropdown',
-            'condition'          => ['is_visible_cable' => 1]
+            'condition'          => $this->getStateVisibilityCriteria()
         ];
 
         $tab[] = [
@@ -379,8 +450,9 @@ class Cable extends CommonDBTM
                 $itemtype = isset($values['itemtype_endpoint_b']) ? $values['itemtype_endpoint_b'] : $values['itemtype_endpoint_a'];
                 $items_id = isset($values['items_id_endpoint_b']) ? $values['items_id_endpoint_b'] : $values['items_id_endpoint_a'];
 
-                if (method_exists($itemtype, 'getDcBreadcrumbSpecificValueToDisplay')) {
-                    return $itemtype::getDcBreadcrumbSpecificValueToDisplay($items_id);
+                if (method_exists($itemtype, 'renderDcBreadcrumb')) {
+                    /** @var class-string $itemtype */
+                    return $itemtype::renderDcBreadcrumb($items_id);
                 }
         }
         return parent::getSpecificValueToDisplay($field, $values, $options);

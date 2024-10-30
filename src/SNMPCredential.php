@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,6 +34,7 @@
  */
 
 use Glpi\Application\View\TemplateRenderer;
+use Glpi\Inventory\Inventory;
 
 /**
  * SNMP credentials
@@ -42,11 +43,46 @@ class SNMPCredential extends CommonDBTM
 {
    // From CommonDBTM
     public $dohistory                   = true;
-    public static $rightname = 'computer';
+    public static $rightname = 'snmpcredential';
 
     public static function getTypeName($nb = 0)
     {
         return _n('SNMP credential', 'SNMP credentials', $nb);
+    }
+
+    public static function getSectorizedDetails(): array
+    {
+        return ['admin', Inventory::class, self::class];
+    }
+
+    public static function rawSearchOptionsToAdd()
+    {
+        $tab = [];
+
+        $tab[] = [
+            'id'                => 'snmpcredential',
+            'name'              => SNMPCredential::getTypeName(0)
+        ];
+
+        $tab[] = [
+            'id'                => '108',
+            'table'             => 'glpi_snmpcredentials',
+            'field'             => 'name',
+            'name'              => __('Name'),
+            'datatype'          => 'dropdown',
+            'massiveaction'     => false,
+        ];
+
+        $tab[] = [
+            'id'                => '109',
+            'table'             => 'glpi_snmpcredentials',
+            'field'             => 'community',
+            'name'              => __('Community'),
+            'datatype'          => 'string',
+            'massiveaction'     => false,
+        ];
+
+        return $tab;
     }
 
     public function rawSearchOptions()
@@ -125,7 +161,6 @@ class SNMPCredential extends CommonDBTM
             default:
                 return '';
         }
-        return '';
     }
 
     /**
@@ -150,12 +185,24 @@ class SNMPCredential extends CommonDBTM
     protected function prepareInputs(array $input): array
     {
         $key = new GLPIKey();
-        if (isset($input['auth_passphrase'])) {
+        // Handle setting passwords
+        if (isset($input['auth_passphrase']) && !empty($input['auth_passphrase'])) {
             $input['auth_passphrase'] = $key->encrypt($input['auth_passphrase']);
+        } else {
+            unset($input['auth_passphrase']);
+        }
+        if (isset($input['priv_passphrase']) && !empty($input['priv_passphrase'])) {
+            $input['priv_passphrase'] = $key->encrypt($input['priv_passphrase']);
+        } else {
+            unset($input['priv_passphrase']);
         }
 
-        if (isset($input['priv_passphrase'])) {
-            $input['priv_passphrase'] = $key->encrypt($input['priv_passphrase']);
+        // Handle unsetting passwords
+        if (isset($input['_blank_auth_passphrase'])) {
+            $input['auth_passphrase'] = 'NULL';
+        }
+        if (isset($input['_blank_priv_passphrase'])) {
+            $input['priv_passphrase'] = 'NULL';
         }
 
         return $input;
@@ -165,14 +212,14 @@ class SNMPCredential extends CommonDBTM
     {
         // Require a snmpversion
         if (!isset($input['snmpversion']) || $input['snmpversion'] == '0') {
-            Session::addMessageAfterRedirect(__('You must select an SNMP version'), false, ERROR);
+            Session::addMessageAfterRedirect(__s('You must select an SNMP version'), false, ERROR);
             return false;
         }
 
         // Require username if using version 3
         if ($input['snmpversion'] == 3) {
             if (empty($input['username'])) {
-                Session::addMessageAfterRedirect(__('You must enter a username'), false, ERROR);
+                Session::addMessageAfterRedirect(__s('You must enter a username'), false, ERROR);
                 return false;
             }
         }

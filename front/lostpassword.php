@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,7 +33,12 @@
  * ---------------------------------------------------------------------
  */
 
-include('../inc/includes.php');
+use Glpi\Application\View\TemplateRenderer;
+
+/**
+ * @var array $CFG_GLPI
+ */
+global $CFG_GLPI;
 
 if (
     !$CFG_GLPI['notifications_mailing']
@@ -42,7 +47,15 @@ if (
         ['itemtype' => 'User', 'event' => 'passwordforget', 'is_active' => 1]
     )
 ) {
-    exit();
+    Session::addMessageAfterRedirect(
+        __s('Sending password forget notification is not enabled.'),
+        true,
+        ERROR
+    );
+    TemplateRenderer::getInstance()->display('forgotpassword.html.twig', [
+        'messages_only' => true,
+    ]);
+    return;
 }
 
 $user = new User();
@@ -62,5 +75,3 @@ if (isset($_REQUEST['password_forget_token'])) {
         User::showPasswordForgetRequestForm();
     }
 }
-
-exit();

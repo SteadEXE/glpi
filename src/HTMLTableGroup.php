@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -41,45 +41,78 @@ class HTMLTableGroup extends HTMLTableBase
     private $name;
     private $content;
     private $new_headers = [];
+    private $ordered_headers;
     private $table;
+    /** @var array<HTMLTableRow> */
     private $rows = [];
 
-
     /**
-     * @param $table     HTMLTableMain object
+     * @param HTMLTableMain $table
      * @param $name
      * @param $content
      **/
     public function __construct(HTMLTableMain $table, $name, $content)
     {
-
         parent::__construct(false);
         $this->table      = $table;
         $this->name       = $name;
         $this->content    = $content;
     }
 
+    public function __get(string $property)
+    {
+        // TODO Deprecate access to variables in GLPI 11.0.
+        $value = null;
+        switch ($property) {
+            case 'ordered_headers':
+                $value = $this->$property;
+                break;
+            default:
+                $trace = debug_backtrace();
+                trigger_error(
+                    sprintf('Undefined property: %s::%s in %s on line %d', __CLASS__, $property, $trace[0]['file'], $trace[0]['line']),
+                    E_USER_WARNING
+                );
+                break;
+        }
+        return $value;
+    }
+
+    public function __set(string $property, $value)
+    {
+        // TODO Deprecate access to variables in GLPI 11.0.
+        switch ($property) {
+            case 'ordered_headers':
+                $this->$property = $value;
+                break;
+            default:
+                $trace = debug_backtrace();
+                trigger_error(
+                    sprintf('Undefined property: %s::%s in %s on line %d', __CLASS__, $property, $trace[0]['file'], $trace[0]['line']),
+                    E_USER_WARNING
+                );
+                break;
+        }
+    }
 
     public function getName()
     {
         return $this->name;
     }
 
-
     public function getTable()
     {
         return $this->table;
     }
 
-
     /**
-     * @param $header    HTMLTableHeader object
+     * @param HTMLTableHeader $header
+     * @return boolean
      **/
     public function haveHeader(HTMLTableHeader $header)
     {
-
         $header_name    = '';
-        $subHeader_name = '';
+        $subheader_name = '';
         $header->getHeaderAndSubHeaderName($header_name, $subheader_name);
         try {
             $subheaders = $this->getHeaders($header_name);
@@ -93,50 +126,22 @@ class HTMLTableGroup extends HTMLTableBase
         return isset($subheaders[$subheader_name]);
     }
 
-
     public function tryAddHeader()
     {
-
-        if (isset($this->ordered_headers)) {
+        if ($this->ordered_headers !== null) {
             throw new \Exception('Implementation error: must define all headers before any row');
         }
     }
 
-
-    private function completeHeaders()
-    {
-
-        if (!isset($this->ordered_headers)) {
-            $this->ordered_headers = [];
-
-            foreach ($this->table->getHeaderOrder() as $header_name) {
-                $header        = $this->table->getSuperHeaderByName($header_name);
-                $header_names  = $this->getHeaderOrder($header_name);
-                if (!$header_names) {
-                    $this->ordered_headers[] = $header;
-                } else {
-                    foreach ($header_names as $sub_header_name) {
-                        $this->ordered_headers[] = $this->getHeaderByName($header_name, $sub_header_name);
-                    }
-                }
-            }
-        }
-    }
-
-
     public function createRow()
     {
-
-       //$this->completeHeaders();
         $new_row      = new HTMLTableRow($this);
         $this->rows[] = $new_row;
         return $new_row;
     }
 
-
     public function prepareDisplay()
     {
-
         foreach ($this->table->getHeaderOrder() as $super_header_name) {
             $super_header = $this->table->getSuperHeaderByName($super_header_name);
 
@@ -151,7 +156,7 @@ class HTMLTableGroup extends HTMLTableBase
                     }
                 }
 
-                if ($count == 0) {
+                if ($count === 0) {
                     $this->ordered_headers[] = $super_header;
                 } else {
                     $super_header->updateNumberOfSubHeader($count);
@@ -173,7 +178,6 @@ class HTMLTableGroup extends HTMLTableBase
         }
     }
 
-
     /**
      * Display the current group (with headers and rows)
      *
@@ -190,22 +194,19 @@ class HTMLTableGroup extends HTMLTableBase
      **/
     public function displayGroup($totalNumberOfColumn, array $params)
     {
-
-        $p['display_header_for_each_group']         = true;
-        $p['display_header_on_foot_for_each_group'] = false;
-        $p['display_super_for_each_group']          = true;
-        $p['display_title_for_each_group']          = true;
-
-        foreach ($params as $key => $val) {
-            $p[$key] = $val;
-        }
+        $p = array_replace([
+            'display_header_for_each_group'         => true,
+            'display_header_on_foot_for_each_group' => false,
+            'display_super_for_each_group'          => true,
+            'display_title_for_each_group'          => true,
+        ], $params);
 
         if ($this->getNumberOfRows() > 0) {
             if (
                 $p['display_title_for_each_group']
                 && !empty($this->content)
             ) {
-                echo "\t<tbody><tr><th colspan='$totalNumberOfColumn'>" . $this->content .
+                echo "\t<tbody><tr><th colspan='$totalNumberOfColumn'>" . htmlescape($this->content) .
                  "</th></tr></tbody>\n";
             }
 
@@ -265,23 +266,13 @@ class HTMLTableGroup extends HTMLTableBase
         }
     }
 
-
     public function getNumberOfRows()
     {
-
-        $numberOfRows = 0;
-        foreach ($this->rows as $row) {
-            if ($row->notEmpty()) {
-                $numberOfRows++;
-            }
-        }
-        return $numberOfRows;
+        return count(array_filter($this->rows, static fn ($r) => $r->notEmpty()));
     }
-
 
     public function getSuperHeaderByName($name)
     {
-
         try {
             return $this->getHeaderByName($name, '');
         } catch (HTMLTableUnknownHeader $e) {

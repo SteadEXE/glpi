@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,6 +33,9 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\DBAL\QueryExpression;
+use Glpi\DBAL\QueryFunction;
+
 /// Import rules collection class
 class RuleImportAssetCollection extends RuleCollection
 {
@@ -52,11 +55,12 @@ class RuleImportAssetCollection extends RuleCollection
 
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0)
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         if (!$withtemplate) {
-            switch ($item->getType()) {
-                case __CLASS__:
+            switch ($item::class) {
+                case self::class:
                     $ong    = [];
                     $types = $CFG_GLPI['state_types'];
                     foreach ($types as $type) {
@@ -71,16 +75,14 @@ class RuleImportAssetCollection extends RuleCollection
         return '';
     }
 
-
     public function getTitle()
     {
         return __('Rules for import and link equipments');
     }
 
-
     public function collectionFilter($criteria, $options = [])
     {
-       //current tab
+        // current tab
         $active_tab = $options['_glpi_tab'] ?? Session::getActiveTab($this->getType());
         $current_tab = str_replace(__CLASS__ . '$', '', $active_tab);
         $tabs = $this->getTabNameForItem($this);
@@ -107,7 +109,18 @@ class RuleImportAssetCollection extends RuleCollection
             if (!is_array($criteria['SELECT'])) {
                 $criteria['SELECT'] = [$criteria['SELECT']];
             }
-            $criteria['SELECT'][] = new QueryExpression("COUNT(IF(crit.criteria = 'itemtype', IF(crit.pattern IN ('" . implode("', '", array_keys($tabs)) . "'), 1, NULL), NULL)) AS is_itemtype");
+            $criteria['SELECT'][] = QueryFunction::count(
+                expression: QueryFunction::if(
+                    condition: ['crit.criteria' => 'itemtype'],
+                    true_expression: QueryFunction::if(
+                        condition: ['crit.pattern' => array_keys($tabs)],
+                        true_expression: new QueryExpression('1'),
+                        false_expression: new QueryExpression('null')
+                    ),
+                    false_expression: new QueryExpression('null')
+                ),
+                alias: 'is_itemtype'
+            );
             $where = [];
             $criteria['HAVING'] = ['is_itemtype' => 0];
         }
@@ -138,7 +151,7 @@ class RuleImportAssetCollection extends RuleCollection
             $item = $inventory->getItem();
             $invitem = $inventory->getMainAsset();
 
-          //sanitize input
+            // sanitize input
             if ($input['itemtype'] == 0) {
                 unset($input['itemtype']);
             }
@@ -151,7 +164,7 @@ class RuleImportAssetCollection extends RuleCollection
             $data = $invitem->getData();
             $rules_input = $invitem->prepareAllRulesInput($data[0]);
 
-          //keep user values if any
+            // keep user values if any
             $input += $rules_input;
         } else {
             trigger_error(

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,24 +33,29 @@
  * ---------------------------------------------------------------------
  */
 
-include('../inc/includes.php');
+/**
+ * @var array $CFG_GLPI
+ */
+global $CFG_GLPI;
 
-if (isset($_GET['full_page_tab'])) {
-    Html::header('Only tab for debug', $_SERVER['PHP_SELF']);
-} else {
-    header("Content-Type: text/html; charset=UTF-8");
-    Html::header_nocache();
+/** @var \Glpi\Controller\LegacyFileLoadController $this */
+$this->setAjax();
+
+header("Content-Type: text/html; charset=UTF-8");
+Html::header_nocache();
+
+// Session check is disabled for this script (see `\Glpi\Http\Firewall::computeStrategyForCoreLegacyScript()`)
+// to be able to adapt the checks depending on the request.
+if (!($CFG_GLPI["use_public_faq"] && str_ends_with($_GET["_target"], '/front/helpdesk.faq.php'))) {
+    Session::checkLoginUser();
 }
 
-// Not possible to check right for anonymous FAQ
-//Session::checkLoginUser();
-
 if (!isset($_GET['_glpi_tab'])) {
-    exit();
+    return;
 }
 
 if (!isset($_GET['_itemtype']) || empty($_GET['_itemtype'])) {
-    exit();
+    return;
 }
 
 if (!isset($_GET["sort"])) {
@@ -69,21 +74,19 @@ if (isset($_GET['id']) && !empty($_GET['id'])) {
     $_GET['id'] = (int)$_GET['id'];
 }
 
-/** @global array $_UGET */
-
-if ($item = getItemForItemtype($_UGET['_itemtype'])) {
+if ($item = getItemForItemtype($_GET['_itemtype'])) {
     if ($item->get_item_to_display_tab) {
        // No id if ruleCollection but check right
         if ($item instanceof RuleCollection) {
             if (!$item->canList()) {
-                exit();
+                return;
             }
         } else if (!isset($_GET["id"]) || $item->isNewID($_GET["id"])) {
             if (!$item->can(-1, CREATE, $_GET)) {
-                exit();
+                return;
             }
         } else if (!$item->can($_GET["id"], READ)) {
-            exit();
+            return;
         }
     }
 }
@@ -92,10 +95,7 @@ if (isset($_GET['_target'])) {
     $_GET['_target'] = Toolbox::cleanTarget($_GET['_target']);
 }
 
-$tabs = Toolbox::getAvailablesTabs($_UGET['_itemtype'], $_GET['id'] ?? null);
-if (isset($tabs[$_GET['_glpi_tab']])) {
-    Session::setActiveTab($_UGET['_itemtype'], $_GET['_glpi_tab']);
-}
+Session::setActiveTab($_GET['_itemtype'], $_GET['_glpi_tab']);
 
 $notvalidoptions = ['_glpi_tab', '_itemtype', 'sort', 'order', 'withtemplate', 'formoptions'];
 $options         = $_GET;
@@ -108,23 +108,6 @@ if (isset($options['locked'])) {
     ObjectLock::setReadOnlyProfile();
 }
 
-CommonGLPI::displayStandardTab($item, $_UGET['_glpi_tab'], $_GET["withtemplate"], $options);
-
-
-if (isset($_GET['full_page_tab'])) {
-   // I think that we should display this warning, because tabs are not prepare
-   // for being used full space ...
-    if (!isset($_SESSION['glpi_warned_about_full_page_tab'])) {
-       // Debug string : not really need translation.
-        $msg  = 'WARNING: full page tabs are only for debug/validation purpose !\n';
-        $msg .= 'Actions on this page may have undefined result.';
-        echo "<script type='text/javascript' >\n";
-        echo "alert('$msg')";
-        echo "</script>";
-        $_SESSION['glpi_warned_about_full_page_tab'] = true;
-    }
-
-    Html::footer();
-} else {
-    Html::ajaxFooter();
-}
+\Glpi\Debug\Profiler::getInstance()->start('CommonGLPI::displayStandardTab');
+CommonGLPI::displayStandardTab($item, $_GET['_glpi_tab'], $_GET["withtemplate"], $options);
+\Glpi\Debug\Profiler::getInstance()->stop('CommonGLPI::displayStandardTab');

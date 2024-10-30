@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -39,8 +39,10 @@
 
 use Glpi\Event;
 
-include('../inc/includes.php');
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
 
+Session::checkRight("networking", READ);
 
 $np  = new NetworkPort();
 $nn  = new NetworkPort_NetworkPort();
@@ -77,6 +79,15 @@ if (isset($_POST["add"])) {
         unset($input['several']);
         unset($input['from_logical_number']);
         unset($input['to_logical_number']);
+
+        if ($_POST["to_logical_number"] < $_POST["from_logical_number"]) {
+            Session::addMessageAfterRedirect(
+                __s("'To' should not be smaller than 'From'"),
+                false,
+                ERROR
+            );
+            Html::back();
+        }
 
         for ($i = $_POST["from_logical_number"]; $i <= $_POST["to_logical_number"]; $i++) {
             $add = "";
@@ -117,6 +128,22 @@ if (isset($_POST["add"])) {
         Html::redirect($item->getFormURLWithID($np->fields['items_id']));
     }
     Html::redirect($CFG_GLPI["root_doc"] . "/front/central.php");
+} else if (isset($_POST["delete"])) {
+    $np->check($_POST['id'], DELETE);
+    $np->delete($_POST, 0);
+    Event::log(
+        $_POST['id'],
+        "networkport",
+        5,
+        "inventory",
+        //TRANS: %s is the user login
+        sprintf(__('%s deletes an item'), $_SESSION["glpiname"])
+    );
+
+    if ($item = getItemForItemtype($np->fields['itemtype'])) {
+        Html::redirect($item->getFormURLWithID($np->fields['items_id']));
+    }
+    Html::redirect($CFG_GLPI["root_doc"] . "/front/central.php");
 } else if (isset($_POST["update"])) {
     $np->check($_POST['id'], UPDATE);
 
@@ -137,6 +164,20 @@ if (isset($_POST["add"])) {
         $nn->delete($_POST);
     }
     Html::back();
+} else if (isset($_POST["restore"])) {
+    $np->check($_POST["id"], DELETE);
+
+    if ($np->restore($_POST)) {
+        Event::log(
+            $_POST["id"],
+            "networkport",
+            4,
+            "inventory",
+            //TRANS: %s is the user login
+            sprintf(__('%s restores an item'), $_SESSION["glpiname"])
+        );
+    }
+    Html::back();
 } else {
     if (empty($_GET["items_id"])) {
         $_GET["items_id"] = "";
@@ -151,6 +192,7 @@ if (isset($_POST["add"])) {
         $_GET["instantiation_type"] = "";
     }
 
-    $menus = ['assets'];
+    $menus[0] = 'assets';
+    $menus[1] = 'networkport';
     NetworkPort::displayFullPageForItem($_GET["id"], $menus, $_GET);
 }

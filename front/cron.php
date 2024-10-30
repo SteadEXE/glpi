@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,17 +33,40 @@
  * ---------------------------------------------------------------------
  */
 
+if (PHP_SAPI === 'cli') {
+    // Check the resources state before trying to instanciate the Kernel.
+    // It must be done here as this check must be done even when the Kernel
+    // cannot be instanciated due to missing dependencies.
+    require_once dirname(__DIR__) . '/src/Glpi/Application/ResourcesChecker.php';
+    (new \Glpi\Application\ResourcesChecker(dirname(__DIR__)))->checkResources();
+
+    require_once dirname(__DIR__) . '/vendor/autoload.php';
+
+    $kernel = new \Glpi\Kernel\Kernel();
+    $kernel->loadCommonGlobalConfig();
+}
+
+/**
+ * @var array $CFG_GLPI
+ */
+global $CFG_GLPI;
+
 // Ensure current directory when run from crontab
 chdir(__DIR__);
 
-
-define('DO_NOT_CHECK_HTTP_REFERER', 1);
-include('../inc/includes.php');
+// Try detecting if we are running with the root user (Not available on Windows)
+if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+    echo "\t" . 'WARNING: running as root is discouraged.' . "\n";
+    echo "\t" . 'You should run the script as the same user that your web server runs as to avoid file permissions being ruined.' . "\n";
+    if (!in_array('--allow-superuser', $_SERVER['argv'], true)) {
+        echo "\t" . 'Use --allow-superuser option to bypass this limitation.' . "\n";
+        exit(1);
+    }
+}
 
 if (!is_writable(GLPI_LOCK_DIR)) {
-   //TRANS: %s is a directory
-    echo "\t" . sprintf(__('ERROR: %s is not writable') . "\n", GLPI_LOCK_DIR);
-    echo "\t" . __('run script as apache user') . "\n";
+    echo "\t" . sprintf('ERROR: %s is not writable.' . "\n", GLPI_LOCK_DIR);
+    echo "\t" . 'Run the script as the same user that your web server runs as.' . "\n";
     exit(1);
 }
 

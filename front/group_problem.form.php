@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,20 +33,18 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Event;
+use Glpi\Exception\Http\BadRequestHttpException;
+
 /**
  * @since 0.85
  */
 
-use Glpi\Event;
-
-if (!defined('GLPI_ROOT')) {
-    include('../inc/includes.php');
-}
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
 
 $link = new Group_Problem();
 $item = new Problem();
-
-Session ::checkLoginUser();
 
 if (isset($_POST['delete'])) {
     $link->check($_POST['id'], DELETE);
@@ -64,7 +62,7 @@ if (isset($_POST['delete'])) {
         Html::redirect(Problem::getFormURLWithID($link->fields['problems_id']));
     }
     Session::addMessageAfterRedirect(
-        __('You have been redirected because you no longer have access to this item'),
+        __s('You have been redirected because you no longer have access to this item'),
         true,
         ERROR
     );
@@ -72,4 +70,4 @@ if (isset($_POST['delete'])) {
     Html::redirect($CFG_GLPI["root_doc"] . "/front/problem.php");
 }
 
-Html::displayErrorAndDie('Lost');
+throw new BadRequestHttpException();

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,9 +33,8 @@
  * ---------------------------------------------------------------------
  */
 
-use atoum\atoum;
 use Glpi\Tests\Log\TestHandler;
-use Monolog\Logger;
+use Monolog\Level;
 use Psr\Log\LogLevel;
 
 // Main GLPI test case. All tests should extends this class.
@@ -43,7 +42,6 @@ use Psr\Log\LogLevel;
 class GLPITestCase extends atoum
 {
     private $int;
-    private $str;
     protected $has_failed = false;
 
     /**
@@ -61,13 +59,16 @@ class GLPITestCase extends atoum
        // By default, no session, not connected
         $this->resetSession();
 
+        // By default, there shouldn't be any pictures in the test files
+        $this->resetPictures();
+
        // Ensure cache is clear
         global $GLPI_CACHE;
         $GLPI_CACHE->clear();
 
         // Init log handlers
         global $PHPLOGGER, $SQLLOGGER;
-        /** @var Monolog\Logger $PHPLOGGER */
+        /** @var \Monolog\Logger $PHPLOGGER */
         $this->php_log_handler = new TestHandler(LogLevel::DEBUG);
         $PHPLOGGER->setHandlers([$this->php_log_handler]);
         $this->sql_log_handler = new TestHandler(LogLevel::DEBUG);
@@ -91,16 +92,90 @@ class GLPITestCase extends atoum
 
         if (!$this->has_failed) {
             foreach ([$this->php_log_handler, $this->sql_log_handler] as $log_handler) {
-                $this->array($log_handler->getRecords())->isEmpty(
+                $this->array($log_handler->getRecords());
+                $clean_logs = array_map(
+                    static function (\Monolog\LogRecord $entry): array {
+                        return [
+                            'channel' => $entry->channel,
+                            'level'   => $entry->level->name,
+                            'message' => $entry->message,
+                        ];
+                    },
+                    $log_handler->getRecords()
+                );
+                $this->array($clean_logs)->isEmpty(
                     sprintf(
                         "Unexpected entries in log in %s::%s:\n%s",
                         static::class,
                         $method,
-                        print_r(array_column($log_handler->getRecords(), 'message'), true)
+                        print_r($clean_logs, true)
                     )
                 );
             }
         }
+    }
+
+    protected function resetPictures()
+    {
+        // Delete contents of test files/_pictures
+        $dir = GLPI_PICTURE_DIR;
+        if (!str_contains($dir, '/tests/files/_pictures')) {
+            throw new \RuntimeException('Invalid picture dir: ' . $dir);
+        }
+        // Delete nested folders and files in dir
+        $fn_delete = function ($dir, $parent) use (&$fn_delete) {
+            $files = glob($dir . '/*') ?? [];
+            foreach ($files as $file) {
+                if (is_dir($file)) {
+                    $fn_delete($file, $parent);
+                } else {
+                    unlink($file);
+                }
+            }
+            if ($dir !== $parent) {
+                rmdir($dir);
+            }
+        };
+        if (file_exists($dir) && is_dir($dir)) {
+            $fn_delete($dir, $dir);
+        }
+    }
+
+    /**
+     * Call a private method, and get its return value.
+     *
+     * @param mixed     $instance   Class instance
+     * @param string    $methodName Method to call
+     * @param mixed     ...$arg     Method arguments
+     *
+     * @return mixed
+     */
+    protected function callPrivateMethod($instance, string $methodName, ...$args)
+    {
+        $method = new \ReflectionMethod($instance, $methodName);
+        $method->setAccessible(true);
+
+        return $method->invoke($instance, ...$args);
+    }
+
+    /**
+     * Call a private constructor, and get the created instance.
+     *
+     * @param string    $classname  Class to instanciate
+     * @param mixed     $arg        Constructor arguments
+     *
+     * @return mixed
+     */
+    protected function callPrivateConstructor($classname, $args)
+    {
+        $class = new ReflectionClass($classname);
+        $instance = $class->newInstanceWithoutConstructor();
+
+        $constructor = $class->getConstructor();
+        $constructor->setAccessible(true);
+        $constructor->invokeArgs($instance, $args);
+
+        return $instance;
     }
 
     protected function resetSession()
@@ -202,7 +277,10 @@ class GLPITestCase extends atoum
 
         $matching = null;
         foreach ($records as $record) {
-            if ($record['level'] === Logger::toMonologLevel($level) && strpos($record['message'], $message) !== false) {
+            if (
+                Level::fromValue($record['level']) === Level::fromName($level)
+                && strpos($record['message'], $message) !== false
+            ) {
                 $matching = $record;
                 break;
             }
@@ -256,7 +334,10 @@ class GLPITestCase extends atoum
 
         $matching = null;
         foreach ($handler->getRecords() as $record) {
-            if ($record['level'] === Logger::toMonologLevel($level) && preg_match($pattern, $record['message']) === 1) {
+            if (
+                Level::fromValue($record['level']) === Level::fromName($level)
+                && preg_match($pattern, $record['message']) === 1
+            ) {
                 $matching = $record;
                 break;
             }
@@ -272,10 +353,13 @@ class GLPITestCase extends atoum
      */
     protected function getUniqueString()
     {
-        if (is_null($this->str)) {
-            return $this->str = uniqid('str');
-        }
-        return $this->str .= 'x';
+        return substr(
+            str_shuffle(
+                str_repeat("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 5)
+            ),
+            0,
+            16
+        );
     }
 
     /**
@@ -287,5 +371,49 @@ class GLPITestCase extends atoum
             return $this->int = mt_rand(1000, 10000);
         }
         return $this->int++;
+    }
+
+    /**
+     * Get the "_test_root_entity" entity created by the tests's bootstrap file
+     *
+     * @param bool $only_id
+     *
+     * @return Entity|int
+     */
+    protected function getTestRootEntity(bool $only_id = false)
+    {
+        return getItemByTypeName('Entity', '_test_root_entity', $only_id);
+    }
+
+    /**
+     * Return the minimal fields required for the creation of an item of the given field.
+     *
+     * @param string $class
+     * @return array
+     */
+    protected function getMinimalCreationInput(string $class): array
+    {
+        if (!is_a($class, CommonDBTM::class, true)) {
+            return [];
+        }
+
+        $input = [];
+
+        if ((new $class())->isField('entities_id')) {
+            $input['entities_id'] = $this->getTestRootEntity(true);
+        }
+
+        switch ($class) {
+            case Item_DeviceSimcard::class:
+                $input['itemtype']          = Computer::class;
+                $input['items_id']          = getItemByTypeName(Computer::class, '_test_pc01', true);
+                $input['devicesimcards_id'] = getItemByTypeName(DeviceSimcard::class, '_test_simcard_1', true);
+                break;
+            case SoftwareLicense::class:
+                $input['softwares_id'] = getItemByTypeName(Software::class, '_test_soft', true);
+                break;
+        }
+
+        return $input;
     }
 }

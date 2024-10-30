@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,6 +33,8 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Application\View\TemplateRenderer;
+
 class Item_Enclosure extends CommonDBRelation
 {
     public static $itemtype_1 = 'Enclosure';
@@ -40,8 +42,8 @@ class Item_Enclosure extends CommonDBRelation
     public static $itemtype_2 = 'itemtype';
     public static $items_id_2 = 'items_id';
     public static $checkItem_1_Rights = self::DONT_CHECK_ITEM_RIGHTS;
-    public static $mustBeAttached_1      = false;
-    public static $mustBeAttached_2      = false;
+    public static $mustBeAttached_1 = false; // FIXME It make no sense for an enclosure item to not be attached to an Enclosure.
+    public static $mustBeAttached_2 = false; // FIXME It make no sense for an enclosure item to not be attached to an Item.
 
     public static function getTypeName($nb = 0)
     {
@@ -55,12 +57,13 @@ class Item_Enclosure extends CommonDBRelation
         if ($_SESSION['glpishow_count_on_tabs']) {
             $nb = self::countForMainItem($item);
         }
-        return self::createTabEntry(self::getTypeName(Session::getPluralNumber()), $nb);
+        return self::createTabEntry(self::getTypeName(Session::getPluralNumber()), $nb, $item::getType());
     }
 
     public static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0)
     {
-        self::showItems($item, $withtemplate);
+        self::showItems($item);
+        return true;
     }
 
     /**
@@ -70,6 +73,7 @@ class Item_Enclosure extends CommonDBRelation
      **/
     public static function showItems(Enclosure $enclosure)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $ID = $enclosure->getID();
@@ -84,27 +88,17 @@ class Item_Enclosure extends CommonDBRelation
         $canedit = $enclosure->canEdit($ID);
 
         $items = $DB->request([
+            'SELECT' => ['id', 'itemtype', 'items_id', 'position'],
             'FROM'   => self::getTable(),
             'WHERE'  => [
                 'enclosures_id' => $enclosure->getID()
             ]
         ]);
 
-        Session::initNavigateListItems(
-            self::getType(),
-            //TRANS : %1$s is the itemtype name,
-            //        %2$s is the name of the item (used for headings of a list)
-            sprintf(
-                __('%1$s = %2$s'),
-                $enclosure->getTypeName(1),
-                $enclosure->getName()
-            )
-        );
-
         if ($enclosure->canAddItem('itemtype')) {
-            echo "<div class='firstbloc'>";
+            echo "<div class='mt-1 mb-3 text-center'>";
             Html::showSimpleForm(
-                Item_Enclosure::getFormURL(),
+                self::getFormURL(),
                 '_add_fromitem',
                 __('Add new item to this enclosure...'),
                 [
@@ -115,62 +109,46 @@ class Item_Enclosure extends CommonDBRelation
             echo "</div>";
         }
 
-        $items = iterator_to_array($items);
-
-        if (!count($items)) {
-            echo "<table class='tab_cadre_fixe'><tr><th>" . __('No item found') . "</th></tr>";
-            echo "</table>";
-        } else {
-            if ($canedit) {
-                Html::openMassiveActionsForm('mass' . __CLASS__ . $rand);
-                $massiveactionparams = [
-                    'num_displayed'   => min($_SESSION['glpilist_limit'], count($items)),
-                    'container'       => 'mass' . __CLASS__ . $rand
-                ];
-                Html::showMassiveActions($massiveactionparams);
-            }
-
-            echo "<table class='tab_cadre_fixehov'>";
-            $header = "<tr>";
-            if ($canedit) {
-                $header .= "<th width='10'>";
-                $header .= Html::getCheckAllAsCheckbox('mass' . __CLASS__ . $rand);
-                $header .= "</th>";
-            }
-            $header .= "<th>" . _n('Item', 'Items', 1) . "</th>";
-            $header .= "<th>" . __('Position') . "</th>";
-            $header .= "</tr>";
-
-            echo $header;
-            foreach ($items as $row) {
-                $item = new $row['itemtype']();
-                $item->getFromDB($row['items_id']);
-                echo "<tr lass='tab_bg_1'>";
-                if ($canedit) {
-                    echo "<td>";
-                    Html::showMassiveActionCheckBox(__CLASS__, $row["id"]);
-                    echo "</td>";
-                }
-                echo "<td>" . $item->getLink() . "</td>";
-                echo "<td>{$row['position']}</td>";
-                echo "</tr>";
-            }
-            echo $header;
-            echo "</table>";
-
-            if ($canedit && count($items)) {
-                $massiveactionparams['ontop'] = false;
-                Html::showMassiveActions($massiveactionparams);
-            }
-            if ($canedit) {
-                Html::closeForm();
-            }
+        $entries = [];
+        foreach ($items as $row) {
+            $item = new $row['itemtype']();
+            $item->getFromDB($row['items_id']);
+            $entries[] = [
+                'itemtype' => static::class,
+                'id'       => $row['id'],
+                'item'     => $item->getLink(),
+                'position' => $row['position']
+            ];
         }
+
+        TemplateRenderer::getInstance()->display('components/datatable.html.twig', [
+            'is_tab' => true,
+            'nofilter' => true,
+            'columns' => [
+                'item' => _n('Item', 'Items', 1),
+                'position' => __('Position')
+            ],
+            'formatters' => [
+                'item' => 'raw_html'
+            ],
+            'entries' => $entries,
+            'total_number' => count($entries),
+            'filtered_number' => count($entries),
+            'showmassiveactions' => $canedit,
+            'massiveactionparams' => [
+                'num_displayed' => min($_SESSION['glpilist_limit'], count($entries)),
+                'container'     => 'mass' . static::class . $rand
+            ],
+        ]);
     }
 
     public function showForm($ID, array $options = [])
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         echo "<div class='center'>";
 
@@ -183,7 +161,7 @@ class Item_Enclosure extends CommonDBRelation
         $rand = mt_rand();
 
         echo "<tr class='tab_bg_1'>";
-        echo "<td><label for='dropdown_itemtype$rand'>" . __('Item type') . "</label></td>";
+        echo "<td><label for='dropdown_itemtype$rand'>" . __s('Item type') . "</label></td>";
         echo "<td>";
         $types = $CFG_GLPI['rackable_types'];
         $translated_types = [];
@@ -240,7 +218,7 @@ class Item_Enclosure extends CommonDBRelation
        //TODO: update orientation according to item model depth
 
         echo "</td>";
-        echo "<td><label for='dropdown_items_id$rand'>" . _n('Item', 'Items', 1) . "</label></td>";
+        echo "<td><label for='dropdown_items_id$rand'>" . _sn('Item', 'Items', 1) . "</label></td>";
         echo "<td id='items_id'>";
         if (isset($this->fields['itemtype']) && !empty($this->fields['itemtype'])) {
             $itemtype = $this->fields['itemtype'];
@@ -265,11 +243,11 @@ class Item_Enclosure extends CommonDBRelation
         echo "</tr>";
 
         echo "<tr class='tab_bg_1'>";
-        echo "<td><label for='dropdown_enclosures_id$rand'>" . Enclosure::getTypeName(1) . "</label></td>";
+        echo "<td><label for='dropdown_enclosures_id$rand'>" . htmlescape(Enclosure::getTypeName(1)) . "</label></td>";
         echo "<td>";
         Enclosure::dropdown(['value' => $this->fields["enclosures_id"], 'rand' => $rand]);
         echo "</td>";
-        echo "<td><label for='dropdown_position$rand'>" . __('Position') . "</label></td>";
+        echo "<td><label for='dropdown_position$rand'>" . htmlescape(__('Position')) . "</label></td>";
         echo "<td>";
         Dropdown::showNumber(
             'position',
@@ -304,7 +282,7 @@ class Item_Enclosure extends CommonDBRelation
      *
      * @param array $input Input data
      *
-     * @return array
+     * @return false|array
      */
     private function prepareInput($input)
     {
@@ -315,25 +293,25 @@ class Item_Enclosure extends CommonDBRelation
             ($this->isNewItem() && (!isset($input['itemtype']) || empty($input['itemtype'])))
             || (isset($input['itemtype']) && empty($input['itemtype']))
         ) {
-            $error_detected[] = __('An item type is required');
+            $error_detected[] = __s('An item type is required');
         }
         if (
             ($this->isNewItem() && (!isset($input['items_id']) || empty($input['items_id'])))
             || (isset($input['items_id']) && empty($input['items_id']))
         ) {
-            $error_detected[] = __('An item is required');
+            $error_detected[] = __s('An item is required');
         }
         if (
             ($this->isNewItem() && (!isset($input['enclosures_id']) || empty($input['enclosures_id'])))
             || (isset($input['enclosures_id']) && empty($input['enclosures_id']))
         ) {
-            $error_detected[] = __('An enclosure is required');
+            $error_detected[] = __s('An enclosure is required');
         }
         if (
             ($this->isNewItem() && (!isset($input['position']) || empty($input['position'])))
             || (isset($input['position']) && empty($input['position']))
         ) {
-            $error_detected[] = __('A position is required');
+            $error_detected[] = __s('A position is required');
         }
 
         if (count($error_detected)) {

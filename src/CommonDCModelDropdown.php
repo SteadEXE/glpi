@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,12 +33,15 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\DBAL\QuerySubQuery;
 use Glpi\Features\AssetImage;
+use Glpi\Features\Clonable;
 
 /// CommonDCModelDropdown class - dropdown for datacenter items models
 abstract class CommonDCModelDropdown extends CommonDropdown
 {
     use AssetImage;
+    use Clonable;
 
     public $additional_fields_for_dictionnary = ['manufacturer'];
 
@@ -55,6 +58,7 @@ abstract class CommonDCModelDropdown extends CommonDropdown
      **/
     public function getAdditionalFields()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $fields = parent::getAdditionalFields();
@@ -127,6 +131,7 @@ abstract class CommonDCModelDropdown extends CommonDropdown
 
     public function rawSearchOptions()
     {
+        /** @var \DBmysql $DB */
         global $DB;
         $options = parent::rawSearchOptions();
         $table   = $this->getTable();
@@ -201,15 +206,82 @@ abstract class CommonDCModelDropdown extends CommonDropdown
         switch ($field) {
             case 'picture_front':
             case 'picture_rear':
-                if (isset($options['html']) && $options['html']) {
+                if (isset($values['name']) && strlen($values['name']) > 0 && isset($options['html']) && $options['html']) {
                     return Html::image(Toolbox::getPictureUrl($values[$field]), [
                         'alt'   => $options['searchopt']['name'],
-                        'style' => 'height: 30px;',
+                        'style' => 'max-height: 60px;',
                     ]);
                 }
         }
 
         return parent::getSpecificValueToDisplay($field, $values, $options);
+    }
+
+    /**
+     * Get the itemtype for this model
+     *
+     * @return string
+     */
+    public function getItemtypeForModel(): string
+    {
+        return str_replace('Model', '', get_called_class());
+    }
+
+    /**
+     * Get the items in racks that are using this model
+     *
+     * @return array
+     */
+    public function getItemsRackForModel(): array
+    {
+        $itemtype = $this->getItemtypeForModel();
+        return (new Item_Rack())->find([
+            'itemtype' => $itemtype,
+            'items_id' => new QuerySubQuery([
+                'SELECT' => 'id',
+                'FROM'   => $itemtype::getTable(),
+                'WHERE'  => [
+                    $this->getForeignKeyField() => $this->fields['id'],
+                ]
+            ])
+        ]);
+    }
+
+    /**
+     * Check if a cell is filled for a specific orientations, hpos and depth
+     *
+     * @param array $cell
+     * @param int $orientation front or rear
+     * @param int $hpos left, right or full
+     * @param float $depth
+     *
+     * @return bool
+     */
+    private function isCellFilled(array $cell, int $orientation, int $hpos, float $depth): bool
+    {
+        // If hpos is full, check if both left and right are filled
+        if ($hpos == Rack::POS_NONE) {
+            return $this->isCellFilled($cell, $orientation, Rack::POS_LEFT, $depth)
+                || $this->isCellFilled($cell, $orientation, Rack::POS_RIGHT, $depth);
+        }
+
+        if (isset($cell[$hpos])) {
+            // Get the first $depth * 4 units of the cell to check if they are filled
+            $accurateCell = array_slice(
+                $orientation ?
+                    array_reverse($cell[$hpos]) // If orientation is rear, reverse the array
+                    : $cell[$hpos],
+                0,
+                $depth * 4
+            );
+
+            // Check if any of the units is filled
+            if (in_array(1, $accurateCell)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function prepareInputForAdd($input)
@@ -219,7 +291,124 @@ abstract class CommonDCModelDropdown extends CommonDropdown
 
     public function prepareInputForUpdate($input)
     {
-        return $this->managePictures($input);
+        $input = $this->managePictures($input);
+        $input = $this->checkForRackIssues($input);
+
+        return $input;
+    }
+
+    public function post_updateItem($history = true)
+    {
+        $this->updateRackItemsHorizontalPosition();
+    }
+
+    /**
+     * Check if the racks items using this model can be updated without issues
+     *
+     * @param array $input
+     * @return array|false
+     */
+    private function checkForRackIssues(array $input)
+    {
+        // Checks whether any fields that might be causing a problem have been modified
+        if (
+            (!isset($input['required_units'])
+                || $input['required_units'] <= $this->fields['required_units']
+            )
+            && (!isset($input['is_half_rack'])
+                || $input['is_half_rack'] == $this->fields['is_half_rack']
+            )
+            && (!isset($input['depth'])
+                || $input['depth'] == $this->fields['depth']
+            )
+        ) {
+            return $input;
+        }
+
+        // Check if the model is used by an asset in a rack
+        // If so, check whether the new units required fit into the rack without modifying the positions
+        $hasIssues = false;
+        $itemtype = $this->getItemtypeForModel();
+        $positionsToCheck = [];
+        foreach ($this->getItemsRackForModel() as $item_rack) {
+            $rack = Rack::getById($item_rack['racks_id']);
+            $filled = $rack->getFilled($itemtype, $item_rack['items_id']);
+            $requiredUnits = $input['required_units'] ?? $this->fields['required_units'];
+            $orientation = $item_rack['orientation'];
+            $hpos = $input['is_half_rack'] ?? $this->fields['is_half_rack'] ? $item_rack['hpos'] : Rack::POS_NONE;
+            $depth = $input['depth'] ?? $this->fields['depth'];
+
+            // Collect the positions to check
+            for ($i = 0; $i < $requiredUnits; $i++) {
+                $positionsToCheck[] = $item_rack['position'] + $i;
+
+                if ($positionsToCheck[array_key_last($positionsToCheck)] > $rack->fields['number_units']) {
+                    for ($j = 1; $j <= $requiredUnits - $i; $j++) {
+                        $positionsToCheck[] = $item_rack['position'] - $j;
+                    }
+                    break;
+                }
+            }
+
+            // Check if any of the positions to check are filled or out of bounds
+            foreach ($positionsToCheck as $position) {
+                if (
+                    isset($filled[$position]) && $this->isCellFilled($filled[$position], $orientation, $hpos, $depth)
+                    || $position < 1
+                ) {
+                    $hasIssues = true;
+                    Session::addMessageAfterRedirect(
+                        sprintf(
+                            __s(
+                                'Unable to update model because it is used by an asset in the "%s" rack and the new required units do not fit into the rack'
+                            ),
+                            $rack->getLink()
+                        ),
+                        true,
+                        ERROR
+                    );
+                    break 2;
+                }
+            }
+        }
+
+        return $hasIssues ? false : $input;
+    }
+
+    /**
+     * Update the horizontal positions of the items in racks using this model
+     *
+     * @return void
+     */
+    private function updateRackItemsHorizontalPosition()
+    {
+        if (!$this->fields['is_half_rack']) {
+            // If the model is not half rack, set the hpos to none for all rack items using this model
+            $item_rack = new Item_Rack();
+            foreach ($this->getItemsRackForModel() as $item) {
+                if ($item['hpos'] == Rack::POS_NONE) {
+                    continue;
+                }
+
+                $item_rack->update([
+                    'id' => $item['id'],
+                    'hpos' => Rack::POS_NONE,
+                ]);
+            }
+        } else {
+            // If the model is half rack, set the hpos to left for all rack items using this model and having hpos none
+            $item_rack = new Item_Rack();
+            foreach ($this->getItemsRackForModel() as $item) {
+                if ($item['hpos'] != Rack::POS_NONE) {
+                    continue;
+                }
+
+                $item_rack->update([
+                    'id' => $item['id'],
+                    'hpos' => Rack::POS_LEFT,
+                ]);
+            }
+        }
     }
 
     public function cleanDBonPurge()
@@ -251,10 +440,50 @@ abstract class CommonDCModelDropdown extends CommonDropdown
         }
     }
 
+
+    public static function rawSearchOptionsToAdd()
+    {
+        $soptions = [];
+
+        $soptions[] = [
+            'id'   => 'pictures',
+            'name' => _n('Picture', 'Pictures', Session::getPluralNumber())
+        ];
+
+        $soptions[] = [
+            'id'                 => '250',
+            'table'              => self::getTable(),
+            'field'              => 'picture_front',
+            'name'               => __('Front picture'),
+            'datatype'           => 'specific',
+            'nosearch'           => true,
+            'nosort'           => true,
+            'massiveaction'      => false,
+        ];
+
+        $soptions[] = [
+            'id'                 => '251',
+            'table'              => self::getTable(),
+            'field'              => 'picture_rear',
+            'name'               => __('Rear picture'),
+            'datatype'           => 'specific',
+            'nosearch'           => true,
+            'nosort'           => true,
+            'massiveaction'      => false,
+        ];
+
+        return $soptions;
+    }
+
     public static function getIcon()
     {
         $model_class  = get_called_class();
         $device_class = str_replace('Model', '', $model_class);
         return $device_class::getIcon();
+    }
+
+    public function getCloneRelations(): array
+    {
+        return [];
     }
 }

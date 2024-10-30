@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -37,16 +37,21 @@
  * @since 0.84
  */
 
-$AJAX_INCLUDE = 1;
+use Glpi\DBAL\QueryExpression;
 
-include('../inc/includes.php');
+/**
+ * @var \DBmysql $DB
+ */
+global $DB;
+
+/** @var \Glpi\Controller\LegacyFileLoadController $this */
+$this->setAjax();
 
 header("Content-Type: text/html; charset=UTF-8");
 Html::header_nocache();
 
 Session::checkRight("networking", UPDATE);
 
-/** @global DBmysql $DB */
 // Make a select box
 if (
     class_exists($_POST["itemtype"])

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,19 +33,16 @@
  * ---------------------------------------------------------------------
  */
 
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
+
 // Direct access to file
 if (strpos($_SERVER['PHP_SELF'], "rulecriteria.php")) {
-    include('../inc/includes.php');
     header("Content-Type: text/html; charset=UTF-8");
     Html::header_nocache();
-} else if (!defined('GLPI_ROOT')) {
-    die("Sorry. You can't access this file directly");
 }
 
-Session::checkLoginUser();
-
-/** @global array $CFG_GLPI */
-
+/** @var Rule $rule */
 if (isset($_POST["sub_type"]) && ($rule = getItemForItemtype($_POST["sub_type"]))) {
     $criterias = $rule->getAllCriteria();
 
@@ -63,11 +60,8 @@ if (isset($_POST["sub_type"]) && ($rule = getItemForItemtype($_POST["sub_type"])
         if (isset($_POST['condition'])) {
             $condparam['value'] = $_POST['condition'];
         }
-        echo "<table class='w-100'><tr><td style='width: 30%'>";
         $randcrit = RuleCriteria::dropdownConditions($_POST["sub_type"], $condparam);
-        echo "</td><td>";
-        echo "<span id='condition_span$randcrit'>\n";
-        echo "</span>\n";
+        echo "<span id='condition_span$randcrit' class='d-inline-block'></span>";
 
         $paramscriteria = ['condition' => '__VALUE__',
             'criteria'  => $_POST["criteria"],
@@ -82,7 +76,7 @@ if (isset($_POST["sub_type"]) && ($rule = getItemForItemtype($_POST["sub_type"])
         );
 
         if (isset($_POST['pattern'])) {
-            $paramscriteria['value'] = stripslashes($_POST['pattern']);
+            $paramscriteria['value'] = $_POST['pattern'];
         }
 
         Ajax::updateItem(
@@ -91,6 +85,5 @@ if (isset($_POST["sub_type"]) && ($rule = getItemForItemtype($_POST["sub_type"])
             $paramscriteria,
             "dropdown_condition$randcrit"
         );
-        echo "</td></tr></table>";
     }
 }

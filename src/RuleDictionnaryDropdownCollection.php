@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -49,9 +49,10 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
 
     public function replayRulesOnExistingDB($offset = 0, $maxtime = 0, $items = [], $params = [])
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
-       // Model check : need to check using manufacturer extra data so specific function
+        // Model check : need to check using manufacturer extra data so specific function
         if (strpos($this->item_table, 'models')) {
             return $this->replayRulesOnExistingDBForModel($offset, $maxtime);
         }
@@ -70,7 +71,7 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
         $nb         = count($iterator) + $offset;
         $i          = $offset;
         if ($nb > $offset) {
-           // Step to refresh progressbar
+            // Step to refresh progressbar
             $step              = (($nb > 20) ? floor($nb / 20) : 1);
             $send              = [];
             $send["tablename"] = $this->item_table;
@@ -78,20 +79,20 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
             foreach ($iterator as $data) {
                 if (!($i % $step)) {
                     if (isCommandLine()) {
-                      //TRANS: %1$s is a row, %2$s is total rows
+                        //TRANS: %1$s is a row, %2$s is total rows
                         printf(__('Replay rules on existing database: %1$s/%2$s') . "\r", $i, $nb);
                     } else {
                         Html::changeProgressBarPosition($i, $nb, "$i / $nb");
                     }
                 }
 
-               //Replay Type dictionnary
+                // Replay Type dictionnary
                 $ID = Dropdown::importExternal(
                     getItemTypeForTable($this->item_table),
-                    addslashes($data["name"]),
+                    $data["name"],
                     -1,
                     [],
-                    addslashes($data["comment"])
+                    $data["comment"]
                 );
                 if ($data['id'] != $ID) {
                      $tomove[$data['id']] = $ID;
@@ -107,7 +108,7 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
 
                 if ($maxtime) {
                     $crt = explode(" ", microtime());
-                    if (($crt[0] + $crt[1]) > $maxtime) {
+                    if (((float)$crt[0] + (float)$crt[1]) > $maxtime) {
                         break;
                     }
                 }
@@ -122,17 +123,17 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
         return (($i == $nb) ? -1 : $i);
     }
 
-
     /**
      * Replay collection rules on an existing DB for model dropdowns
      *
-     * @param $offset    offset used to begin (default 0)
-     * @param $maxtime   maximum time of process (reload at the end) (default 0)
+     * @param integer $offset    offset used to begin (default 0)
+     * @param integer $maxtime   maximum time of process (reload at the end) (default 0)
      *
-     * @return -1 on completion else current offset
+     * @return int|boolean current offset or -1 on completion or false on failure
      **/
     public function replayRulesOnExistingDBForModel($offset = 0, $maxtime = 0)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         if (isCommandLine()) {
@@ -140,7 +141,7 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
         }
 
        // Model check : need to check using manufacturer extra data
-        if (strpos($this->item_table, 'models') === false) {
+        if (!str_contains($this->item_table, 'models')) {
             echo __('Error replaying rules');
             return false;
         }
@@ -201,16 +202,16 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
 
                // Model case
                 if (isset($data["manufacturer"])) {
-                    $data["manufacturer"] = Manufacturer::processName(addslashes($data["manufacturer"]));
+                    $data["manufacturer"] = Manufacturer::processName($data["manufacturer"]);
                 }
 
                //Replay Type dictionnary
                 $ID = Dropdown::importExternal(
                     getItemTypeForTable($this->item_table),
-                    addslashes($data["name"]),
+                    $data["name"],
                     -1,
                     $data,
-                    addslashes($data["comment"])
+                    $data["comment"]
                 );
 
                 if ($data['id'] != $ID) {
@@ -237,7 +238,7 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
                 $i++;
                 if ($maxtime) {
                     $crt = explode(" ", microtime());
-                    if (($crt[0] + $crt[1]) > $maxtime) {
+                    if (((float)$crt[0] + (float)$crt[1]) > $maxtime) {
                         break;
                     }
                 }
@@ -267,7 +268,7 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
                 }
 
                // Manage cartridge assoc Update items
-                if ($this->getRuleClassName() == 'RuleDictionnaryPrinterModel') {
+                if (static::getRuleClassName() === RuleDictionnaryPrinterModel::class) {
                     $iterator2 = $DB->request([
                         'FROM'   => 'glpi_cartridgeitems_printermodels',
                         'WHERE'  => ['printermodels_id' => $ID]
@@ -289,10 +290,9 @@ class RuleDictionnaryDropdownCollection extends RuleCollection
                             );
                         }
                         // Add new assoc
-                        $ct = new CartridgeItem();
                         foreach ($carttype as $cartID) {
                             foreach ($tab as $model) {
-                                $ct->addCompatibleType($cartID, $model);
+                                CartridgeItem::addCompatibleType($cartID, $model);
                             }
                         }
                     }

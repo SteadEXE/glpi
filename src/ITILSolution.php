@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -35,7 +35,6 @@
 
 use Glpi\Application\View\TemplateRenderer;
 use Glpi\ContentTemplates\TemplateManager;
-use Glpi\Toolbox\Sanitizer;
 
 /**
  * ITILSolution Class
@@ -62,58 +61,77 @@ class ITILSolution extends CommonDBChild
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0)
     {
         if ($item->isNewItem()) {
-            return;
+            return '';
         }
-        if ($item->maySolve()) {
+        if (
+            ($item instanceof CommonITILObject)
+            && $item->maySolve()
+        ) {
             $nb    = 0;
             $title = self::getTypeName(Session::getPluralNumber());
             if ($_SESSION['glpishow_count_on_tabs']) {
                 $nb = self::countFor($item->getType(), $item->getID());
             }
-            return self::createTabEntry($title, $nb);
+            return self::createTabEntry($title, $nb, $item::getType());
         }
+        return '';
     }
 
-    public static function canView()
+    public static function canView(): bool
     {
-        return Session::haveRight('ticket', READ)
-             || Session::haveRight('change', READ)
-             || Session::haveRight('problem', READ);
+        /** @var array $CFG_GLPI */
+        global $CFG_GLPI;
+        $itil_types = $CFG_GLPI['itil_types'];
+        /** @var class-string<CommonITILObject> $type */
+        foreach ($itil_types as $type) {
+            if ($type::canView()) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    public static function canUpdate()
+    public static function canUpdate(): bool
     {
        //always true, will rely on ITILSolution::canUpdateItem
         return true;
     }
 
-    public function canUpdateItem()
+    public function canUpdateItem(): bool
     {
         return $this->item->maySolve();
     }
 
-    public static function canCreate()
+    public static function canCreate(): bool
     {
        //always true, will rely on ITILSolution::canCreateItem
         return true;
     }
 
-    public function canCreateItem()
+    public function canCreateItem(): bool
     {
         $item = new $this->fields['itemtype']();
         $item->getFromDB($this->fields['items_id']);
         return $item->canSolve();
     }
 
-    public function canEdit($ID)
+    public function canEdit($ID): bool
     {
         return $this->item->maySolve();
     }
 
     public function post_getFromDB()
     {
-        $this->item = new $this->fields['itemtype']();
-        $this->item->getFromDB($this->fields['items_id']);
+        // Bandaid to avoid loading parent item if not needed
+        // TODO: replace by proper lazy loading in GLPI 11.0
+        if (
+            $this->item == null // No item loaded
+            || $this->item->getType() !== $this->fields['itemtype'] // Another item is loaded
+            || $this->item->getID() !== $this->fields['items_id']   // Another item is loaded
+        ) {
+            $this->item = new $this->fields['itemtype']();
+            $this->item->getFromDB($this->fields['items_id']);
+        }
     }
 
     /**
@@ -195,7 +213,7 @@ class ITILSolution extends CommonDBChild
             }
             $input = array_replace(
                 [
-                    'content'           => Sanitizer::sanitize($template->getRenderedContent($parent_item)),
+                    'content'           => $template->getRenderedContent($parent_item),
                     'solutiontypes_id'  => $template->fields['solutiontypes_id'],
                     'status'            => CommonITILValidation::WAITING,
                 ],
@@ -214,46 +232,48 @@ class ITILSolution extends CommonDBChild
             if (isset($template_fields['content'])) {
                 $parent_item = new $input['itemtype']();
                 $parent_item->getFromDB($input['items_id']);
-                $template_fields['content'] = Sanitizer::sanitize($template->getRenderedContent($parent_item));
+                $template_fields['content'] = $template->getRenderedContent($parent_item);
             }
             $input = array_replace($template_fields, $input);
         }
 
-       // check itil object is not already solved
-        if (in_array($this->item->fields["status"], $this->item->getSolvedStatusArray())) {
-            Session::addMessageAfterRedirect(
-                __("The item is already solved, did anyone pushed a solution before you?"),
-                false,
-                ERROR
-            );
-            return false;
-        }
-
-       //default status for global solutions
-        $status = CommonITILValidation::ACCEPTED;
-
-       //handle autoclose, for tickets only
-        if ($input['itemtype'] == Ticket::getType()) {
-            $autoclosedelay =  Entity::getUsedConfig(
-                'autoclose_delay',
-                $this->item->getEntityID(),
-                '',
-                Entity::CONFIG_NEVER
-            );
-
-           // 0 = immediatly
-            if ($autoclosedelay != 0) {
-                $status = CommonITILValidation::WAITING;
+        if (!$this->item->isStatusComputationBlocked($input)) {
+        // check itil object is not already solved
+            if (in_array($this->item->fields["status"], $this->item->getSolvedStatusArray())) {
+                Session::addMessageAfterRedirect(
+                    __s("The item is already solved, did anyone pushed a solution before you?"),
+                    false,
+                    ERROR
+                );
+                return false;
             }
-        }
 
-       //Accepted; store user and date
-        if ($status == CommonITILValidation::ACCEPTED) {
-            $input['users_id_approval'] = Session::getLoginUserID();
-            $input['date_approval'] = $_SESSION["glpi_currenttime"];
-        }
+            //default status for global solutions
+            $status = CommonITILValidation::ACCEPTED;
 
-        $input['status'] = $status;
+            //handle autoclose, for tickets only
+            if ($input['itemtype'] == Ticket::getType()) {
+                $autoclosedelay =  Entity::getUsedConfig(
+                    'autoclose_delay',
+                    $this->item->getEntityID(),
+                    '',
+                    Entity::CONFIG_NEVER
+                );
+
+                // 0  or ticket status CLOSED = immediately
+                if ($autoclosedelay != 0 && $this->item->fields["status"] != $this->item::CLOSED) {
+                    $status = CommonITILValidation::WAITING;
+                }
+            }
+
+            //Accepted; store user and date
+            if ($status == CommonITILValidation::ACCEPTED) {
+                $input['users_id_approval'] = Session::getLoginUserID();
+                $input['date_approval'] = $_SESSION["glpi_currenttime"];
+            }
+
+            $input['status'] = $status;
+        }
 
        // Render twig content, needed for massives action where we the content
        // can't be rendered directly in the form
@@ -264,7 +284,7 @@ class ITILSolution extends CommonDBChild
             );
 
            // Invalid template
-            if (!$html) {
+            if ($html === null) {
                 return false;
             }
 
@@ -286,25 +306,15 @@ class ITILSolution extends CommonDBChild
 
         $item = $this->item;
 
-       // Replace inline pictures
+        // Handle rich-text images and uploaded documents
         $this->input["_job"] = $this->item;
-        $this->input = $this->addFiles(
-            $this->input,
-            [
-                'force_update' => true,
-                'name' => 'content',
-                'content_field' => 'content',
-            ]
-        );
-
-        // Add documents if needed, without notification
-        $this->input = $this->addFiles($this->input, [
-            'force_update' => true,
-        ]);
+        $this->input = $this->addFiles($this->input, ['force_update' => true]);
 
         // Add solution to duplicates
         if ($this->item->getType() == 'Ticket' && !isset($this->input['_linked_ticket'])) {
-            Ticket_Ticket::manageLinkedTicketsOnSolved($this->item->getID(), $this);
+            CommonITILObject_CommonITILObject::manageLinksOnChange('Ticket', $this->item->getID(), [
+                '_solution' => $this,
+            ]);
         }
 
         if (!isset($this->input['_linked_ticket'])) {
@@ -319,8 +329,8 @@ class ITILSolution extends CommonDBChild
                     Entity::CONFIG_NEVER
                 );
 
-                // 0 = immediatly
-                if ($autoclosedelay == 0) {
+                // 0 = immediately or ticket status CLOSED force status
+                if ($autoclosedelay == 0 || $this->item->fields["status"] == $this->item::CLOSED) {
                      $status = $item::CLOSED;
                 }
             }
@@ -329,6 +339,14 @@ class ITILSolution extends CommonDBChild
                 'id'     => $this->item->getID(),
                 'status' => $status
             ]);
+        }
+
+        if (
+            $this->input["itemtype"] == 'Ticket'
+            && $_SESSION['glpiset_solution_tech']
+            && ($this->input['_disable_auto_assign'] ?? false) === false
+        ) {
+            Ticket::assignToMe($this->input["items_id"], $this->input["users_id"]);
         }
 
         parent::post_addItem();
@@ -352,20 +370,10 @@ class ITILSolution extends CommonDBChild
         return $input;
     }
 
-    public function post_updateItem($history = 1)
+    public function post_updateItem($history = true)
     {
-       // Replace inline pictures
-        $options = [
-            'force_update' => true,
-            'name' => 'content',
-            'content_field' => 'content',
-        ];
-        $this->input = $this->addFiles($this->input, $options);
-
-        // Add documents if needed, without notification
-        $this->input = $this->addFiles($this->input, [
-            'force_update' => true,
-        ]);
+        // Handle rich-text images and uploaded documents
+        $this->input = $this->addFiles($this->input, ['force_update' => true]);
 
         parent::post_updateItem($history);
     }
@@ -388,7 +396,11 @@ class ITILSolution extends CommonDBChild
                 $statuses = self::getStatuses();
 
                 return (isset($statuses[$value]) ? $statuses[$value] : $value);
-            break;
+            case 'itemtype':
+                if (in_array($values['itemtype'], ['Ticket', 'Change', 'Problem'])) {
+                    return $values['itemtype']::getTypeName(1);
+                }
+                return $values['itemtype'];
         }
 
         return parent::getSpecificValueToDisplay($field, $values, $options);
@@ -410,7 +422,12 @@ class ITILSolution extends CommonDBChild
                 $options['display'] = false;
                 $options['value'] = $values[$field];
                 return Dropdown::showFromArray($name, self::getStatuses(), $options);
-            break;
+            case 'itemtype':
+                return Dropdown::showFromArray($field, [
+                    'Ticket' => Ticket::getTypeName(1),
+                    'Change' => Change::getTypeName(1),
+                    'Problem' => Problem::getTypeName(1),
+                ], $options);
         }
 
         return parent::getSpecificValueToSelect($field, $name, $values, $options);
@@ -433,6 +450,87 @@ class ITILSolution extends CommonDBChild
 
     public static function getIcon()
     {
-        return "fas fa-check";
+        return 'ti ti-check';
+    }
+
+    public function rawSearchOptions()
+    {
+
+        $tab = [];
+
+        $tab[] = [
+            'id'                 => 'common',
+            'name'               => __('Characteristics')
+        ];
+
+        $tab[] = [
+            'id'                 => 1,
+            'table'              => self::getTable(),
+            'field'              => 'content',
+            'name'               => __('Description'),
+            'datatype'           => 'text',
+            'htmltext'           => true,
+        ];
+
+        $tab[] = [
+            'id'                 => 2,
+            'table'              => self::getTable(),
+            'field'              => 'id',
+            'name'               => __('ID'),
+            'datatype'           => 'number',
+            'massiveaction'      => false,
+        ];
+
+        $tab[] = [
+            'id'                 => 3,
+            'table'              => 'glpi_users',
+            'field'              => 'name',
+            'name'               => User::getTypeName(1),
+            'datatype'           => 'dropdown',
+            'right'              => 'all'
+        ];
+
+        $tab[] = [
+            'id'                 => 4,
+            'table'              => self::getTable(),
+            'field'              => 'itemtype',
+            'name'               => __('Itemtype'),
+            'datatype'           => 'specific',
+            'searchtype'         => 'equals',
+            'massiveaction'      => false,
+        ];
+
+        $tab[] = [
+            'id'                => 5,
+            'table'             => SolutionType::getTable(),
+            'field'             => 'name',
+            'name'              => SolutionType::getTypeName(1),
+            'datatype'          => 'dropdown',
+            'searchtype'        => 'equals',
+        ];
+
+        return $tab;
+    }
+
+    /**
+     * Allow to set the parent item
+     * Some subclasses will load their parent item in their `post_getFromDB` function
+     * If the parent is already loaded, it might be useful to set it with this method
+     * before loading the item, thus avoiding one useless DB query (or many more queries
+     * when looping on children items)
+     *
+     * TODO 11.0 move method and `item` property into parent class
+     *
+     * @param CommonITILObject $parent Parent item
+     *
+     * @return void
+     */
+    final public function setParentItem(CommonITILObject $parent): void
+    {
+        if (static::$itemtype !== 'itemtype' && !is_a($parent, static::$itemtype)) {
+            throw new LogicException("Invalid parent type");
+        }
+
+        $this->item = $parent;
     }
 }

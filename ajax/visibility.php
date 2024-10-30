@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,17 +33,21 @@
  * ---------------------------------------------------------------------
  */
 
+/**
+ * @var array $CFG_GLPI
+ */
+global $CFG_GLPI;
+
 // Direct access to file
 if (strpos($_SERVER['PHP_SELF'], "visibility.php")) {
-    $AJAX_INCLUDE = 1;
-    include('../inc/includes.php');
+    /** @var \Glpi\Controller\LegacyFileLoadController $this */
+    $this->setAjax();
+
     header("Content-Type: text/html; charset=UTF-8");
     Html::header_nocache();
 }
 
-Session::checkLoginUser();
-
-/** @global array $CFG_GLPI */
+Session::checkCentralAccess();
 
 if (
     isset($_POST['type']) && !empty($_POST['type'])
@@ -97,12 +101,14 @@ if (
 
         case 'Entity':
             echo "<td>";
-            Entity::dropdown(['entity' => $_SESSION['glpiactiveentities'],
-                'value'  => $_SESSION['glpiactive_entity'],
-                'name'   => $prefix . 'entities_id' . $suffix
+            Entity::dropdown([
+                'value'       => $_SESSION['glpiactive_entity'],
+                'name'        => $prefix . 'entities_id' . $suffix,
+                'entity'      => $_POST['entity'] ?? -1,
+                'entity_sons' => $_POST['is_recursive'] ?? false,
             ]);
             echo "</td><td>";
-            echo __('Child entities');
+            echo __s('Child entities');
             echo "</td><td>";
             Dropdown::showYesNo($prefix . 'is_recursive' . $suffix);
             echo "</td>";

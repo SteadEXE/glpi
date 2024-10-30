@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,7 +34,7 @@
  */
 
 use Glpi\Features\Clonable;
-use Glpi\Toolbox\Sanitizer;
+use Glpi\Search\SearchOption;
 
 /**
  * Class that manages all the massive actions
@@ -116,7 +116,7 @@ class MassiveAction
      * Items remaining in current process.
      * @var array
      */
-    private $remainings = [];
+    private $remainings = null;
 
     /**
      * Fields to remove after reload.
@@ -131,10 +131,10 @@ class MassiveAction
     private $timeout_delay;
 
     /**
-     * Current process timer.
-     * @var int
+     * Current process start time.
+     * @var float
      */
-    private $timer;
+    private float $start_time;
 
     /**
      * Item used to check rights.
@@ -169,7 +169,7 @@ class MassiveAction
 
     /**
      * Itemtype currently processed.
-     * @var string
+     * @var class-string<CommonDBTM>
      */
     private $current_itemtype;
 
@@ -189,6 +189,7 @@ class MassiveAction
      **/
     public function __construct(array $POST, array $GET, $stage, ?int $items_id = null)
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         if (!empty($POST)) {
@@ -232,7 +233,7 @@ class MassiveAction
                             foreach ($ids as $id => $checked) {
                                 if ($checked == 1) {
                                     $items[$id] = $id;
-                                    $this->nb_items ++;
+                                    $this->nb_items++;
                                 }
                             }
                              $POST['items'][$itemtype] = $items;
@@ -352,11 +353,7 @@ class MassiveAction
                         foreach ($POST['items'] as $itemtype => $ids) {
                             $this->nb_items += count($ids);
                         }
-                        if (isset($_SERVER['HTTP_REFERER'])) {
-                            $this->redirect = $_SERVER['HTTP_REFERER'];
-                        } else {
-                            $this->redirect = $CFG_GLPI['root_doc'] . "/front/central.php";
-                        }
+                        $this->redirect = Html::getBackUrl();
                     // Don't display progress bars if delay is less than 1 second
                         $this->display_progress_bars = false;
                         break;
@@ -396,23 +393,23 @@ class MassiveAction
             }
             if ($this->identifier != $identifier) {
                 throw new \Exception(__('Invalid process'));
-                return;
             }
             unset($_SESSION['current_massive_action'][$identifier]);
         }
 
        // Add process elements
         if ($stage == 'process') {
-            $this->remainings = $this->items;
+            if (!isset($this->remainings)) {
+                $this->remainings = $this->items;
+            }
 
             $this->fields_to_remove_when_reload = ['fields_to_remove_when_reload'];
 
-            $this->timer = new Timer();
-            $this->timer->start();
-            $this->fields_to_remove_when_reload[] = 'timer';
+            $this->start_time = microtime(true);
 
-            $max_time = (get_cfg_var("max_execution_time") == 0) ? 60
-                                                              : get_cfg_var("max_execution_time");
+            /** @var number $max_time */
+            $max_time = get_cfg_var("max_execution_time");
+            $max_time = ($max_time == 0) ? 60 : $max_time;
 
             $this->timeout_delay                  = ($max_time - 3);
             $this->fields_to_remove_when_reload[] = 'timeout_delay';
@@ -426,7 +423,7 @@ class MassiveAction
 
     public function __get(string $property)
     {
-        // TODO Deprecate access to variables in GLPI 10.1.
+        // TODO Deprecate access to variables in GLPI 11.0.
         $value = null;
         switch ($property) {
             case 'action':
@@ -454,7 +451,6 @@ class MassiveAction
             case 'redirect':
             case 'remainings':
             case 'timeout_delay':
-            case 'timer':
                 Toolbox::deprecated(sprintf('Reading private property %s::%s is deprecated', __CLASS__, $property));
                 $value = $this->$property;
                 break;
@@ -471,7 +467,7 @@ class MassiveAction
 
     public function __set(string $property, $value)
     {
-        // TODO Deprecate access to variables in GLPI 10.1.
+        // TODO Deprecate access to variables in GLPI 11.0.
         switch ($property) {
             case 'display_progress_bars':
                 $this->$property = $value;
@@ -492,7 +488,6 @@ class MassiveAction
             case 'redirect':
             case 'remainings':
             case 'timeout_delay':
-            case 'timer':
                 Toolbox::deprecated(sprintf('Writing private property %s::%s is deprecated', __CLASS__, $property));
                 $this->$property = $value;
                 break;
@@ -522,7 +517,7 @@ class MassiveAction
     /**
      * Get current action
      *
-     * @return a string with the current action or NULL if we are at initial stage
+     * @return string with the current action or NULL if we are at initial stage
      **/
     public function getAction()
     {
@@ -532,7 +527,7 @@ class MassiveAction
     /**
      * Get current action name.
      *
-     * @return
+     * @return string|null
      */
     public function getActionName(): ?string
     {
@@ -542,7 +537,7 @@ class MassiveAction
     /**
      * Get current action processor classname.
      *
-     * @return
+     * @return string|null
      */
     public function getProcessor(): ?string
     {
@@ -568,7 +563,7 @@ class MassiveAction
      **/
     public function getRemainings()
     {
-        return $this->remainings;
+        return $this->remainings ?? [];
     }
 
 
@@ -628,9 +623,7 @@ class MassiveAction
 
         foreach ($common_fields as $field) {
             if (isset($this->POST[$field])) {
-                // Value will be sanitized again when massive action form will be submitted.
-                // It have to be unsanitized here to prevent double sanitization.
-                echo Html::hidden($field, ['value' => Sanitizer::unsanitize($this->POST[$field])]);
+                echo Html::hidden($field, ['value' => $this->POST[$field]]);
             }
         }
     }
@@ -660,9 +653,10 @@ class MassiveAction
         ) {
             $itemtypes = [-1 => Dropdown::EMPTY_VALUE];
             foreach ($keys as $itemtype) {
+                /** @var class-string $itemtype */
                 $itemtypes[$itemtype] = $itemtype::getTypeName(Session::getPluralNumber());
             }
-            echo __('Select the type of the item on which applying this action') . "<br>\n";
+            echo __s('Select the type of the item on which applying this action') . "<br>";
 
             $rand = Dropdown::showFromArray('specialize_itemtype', $itemtypes);
             echo "<br><br>";
@@ -676,7 +670,7 @@ class MassiveAction
                 $params
             );
 
-            echo "<span id='show_itemtype$rand'>&nbsp;</span>\n";
+            echo "<span id='show_itemtype$rand'>&nbsp;</span>";
             exit();
         }
 
@@ -695,6 +689,7 @@ class MassiveAction
         if (
             Session::haveRight('transfer', READ)
             && Session::isMultiEntitiesMode()
+            && !isAPI()
         ) {
             $actions[__CLASS__ . self::CLASS_ACTION_SEPARATOR . 'add_transfer_list']
                   = "<i class='fa-fw fas fa-level-up-alt'></i>" .
@@ -707,14 +702,15 @@ class MassiveAction
      * Get the standard massive actions
      *
      * @param string|CommonDBTM $item        the item for which we want the massive actions
-     * @param boolean           $is_deleted  massive action for deleted items ?   (default 0)
+     * @param boolean           $is_deleted  massive action for deleted items ?   (default false)
      * @param CommonDBTM        $checkitem   link item to check right              (default NULL)
      * @param int|null          $items_id    Get actions for a single item
      *
      * @return array|false Array of massive actions or false if $item is not valid
      **/
-    public static function getAllMassiveActions($item, $is_deleted = 0, CommonDBTM $checkitem = null, ?int $items_id = null)
+    public static function getAllMassiveActions($item, $is_deleted = false, ?CommonDBTM $checkitem = null, ?int $items_id = null)
     {
+        /** @var array $PLUGIN_HOOKS */
         global $PLUGIN_HOOKS;
 
         if (is_string($item)) {
@@ -732,10 +728,12 @@ class MassiveAction
             $canupdate = $checkitem->canUpdate();
             $candelete = $checkitem->canDelete();
             $canpurge  = $checkitem->canPurge();
+            $cancreate = $checkitem->canCreate();
         } else {
             $canupdate = $itemtype::canUpdate();
             $candelete = $itemtype::canDelete();
             $canpurge  = $itemtype::canPurge();
+            $cancreate = $itemtype::canCreate();
         }
 
         $actions   = [];
@@ -764,11 +762,12 @@ class MassiveAction
                //TRANS: select action 'update' (before doing it)
                 $actions[$self_pref . 'update'] = _x('button', 'Update');
 
-                if (Toolbox::hasTrait($itemtype, Clonable::class)) {
-                    $actions[$self_pref . 'clone'] = "<i class='fa-fw far fa-clone'></i>" . _x('button', 'Clone');
+                if ($cancreate && Toolbox::hasTrait($itemtype, Clonable::class)) {
+                    $actions[$self_pref . 'clone'] = "<i class='ti ti-copy'></i>" . _x('button', 'Clone');
                 }
             }
 
+            Line::getMassiveActionsForItemtype($actions, $itemtype, $is_deleted, $checkitem);
             Infocom::getMassiveActionsForItemtype($actions, $itemtype, $is_deleted, $checkitem);
 
             CommonDBConnexity::getMassiveActionsForItemtype(
@@ -803,6 +802,7 @@ class MassiveAction
 
             Document::getMassiveActionsForItemtype($actions, $itemtype, $is_deleted, $checkitem);
             Contract::getMassiveActionsForItemtype($actions, $itemtype, $is_deleted, $checkitem);
+            Reservation::getMassiveActionsForItemtype($actions, $itemtype, $is_deleted, $checkitem);
 
            // Amend comment for objects with a 'comment' field
             $item->getEmpty();
@@ -831,6 +831,7 @@ class MassiveAction
         }
 
         Lock::getMassiveActionsForItemtype($actions, $itemtype, $is_deleted, $checkitem);
+        Consumable::getMassiveActionsForItemtype($actions, $itemtype, $is_deleted, $checkitem);
 
        // Manage forbidden actions : try complete action name or MassiveAction:action_name
         $forbidden_actions = $item->getForbiddenStandardMassiveAction();
@@ -925,6 +926,10 @@ class MassiveAction
 
     public static function showMassiveActionsSubForm(MassiveAction $ma)
     {
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
         global $CFG_GLPI, $DB;
 
         switch ($ma->getAction()) {
@@ -932,8 +937,9 @@ class MassiveAction
                 if (!isset($ma->POST['id_field'])) {
                     $itemtypes        = array_keys($ma->items);
                     $options_per_type = [];
-                    $options_counts   = [];
+                    $options_count   = [];
                     foreach ($itemtypes as $itemtype) {
+                        /** @var class-string $itemtype */
                         $options_per_type[$itemtype] = [];
                         $group                       = '';
                         $show_all                    = true;
@@ -993,6 +999,8 @@ class MassiveAction
                         }
                     }
 
+                    $options = [];
+                    $itemtype_choices = [];
                     if (count($itemtypes) > 1) {
                         $common_options = [];
                         foreach ($options_count as $field => $users) {
@@ -1021,7 +1029,8 @@ class MassiveAction
                         $choose_itemtype  = true;
                         $itemtype_choices = [-1 => Dropdown::EMPTY_VALUE];
                         foreach ($itemtypes as $itemtype) {
-                             $itemtype_choices[$itemtype] = $itemtype::getTypeName(Session::getPluralNumber());
+                            /** @var class-string $itemtype */
+                            $itemtype_choices[$itemtype] = $itemtype::getTypeName(Session::getPluralNumber());
                         }
                     } else {
                         $options        = $options_per_type[$itemtypes[0]];
@@ -1030,7 +1039,7 @@ class MassiveAction
                     }
                     $choose_field = is_countable($options) ? (count($options) >= 1) : false;
 
-                 // Beware: "class='tab_cadre_fixe'" induce side effects ...
+                    // Beware: "class='tab_cadre_fixe'" induce side effects ...
                     echo "<table width='100%'><tr>";
 
                     $colspan = 0;
@@ -1038,20 +1047,20 @@ class MassiveAction
                         $colspan++;
                         echo "<td>";
                         if ($common_options) {
-                            echo __('Select the common field that you want to update');
+                            echo __s('Select the common field that you want to update');
                         } else {
-                            echo __('Select the field that you want to update');
+                            echo __s('Select the field that you want to update');
                         }
                         echo "</td>";
                         if ($choose_itemtype) {
                             $colspan++;
-                            echo "<td rowspan='2'>" . __('or') . "</td>";
+                            echo "<td rowspan='2'>" . __s('or') . "</td>";
                         }
                     }
 
                     if ($choose_itemtype) {
                           $colspan++;
-                          echo "<td>" . __('Select the type of the item on which applying this action') . "</td>";
+                          echo "<td>" . __s('Select the type of the item on which applying this action') . "</td>";
                     }
 
                     echo "</tr><tr>";
@@ -1105,14 +1114,14 @@ class MassiveAction
                             $params
                         );
                     }
-                // Only display the form for this stage
+                    // Only display the form for this stage
                     exit();
                 }
 
                 if (!isset($ma->POST['common_options'])) {
                     echo "<div class='center'><img src='" . $CFG_GLPI["root_doc"] . "/pics/warning.png' alt='" .
                               __s('Warning') . "'><br><br>";
-                    echo "<span class='b'>" . __('Implementation error!') . "</span><br>";
+                    echo "<span class='b'>" . __s('Implementation error!') . "</span><br>";
                     echo "</div>";
                     exit();
                 }
@@ -1145,7 +1154,7 @@ class MassiveAction
                         $so_item->checkGlobal(UPDATE);
                     }
 
-                    $itemtype_search_options = Search::getOptions($so_itemtype);
+                    $itemtype_search_options = SearchOption::getOptionsForItemtype($so_itemtype);
                     if (!isset($itemtype_search_options[$so_index])) {
                         exit();
                     }
@@ -1222,11 +1231,11 @@ class MassiveAction
                 }
                 echo Html::hidden('search_options', ['value' => $items_index]);
                 echo Html::hidden('field', ['value' => $fieldname]);
-                echo "<br>\n";
+                echo "<br>";
 
                 $submitname = "<i class='fas fa-save'></i><span>" . _sx('button', 'Post') . "</span>";
                 if (isset($ma->POST['submitname']) && $ma->POST['submitname']) {
-                    $submitname = stripslashes($ma->POST['submitname']);
+                    $submitname = $ma->POST['submitname'];
                 }
                 echo Html::submit($submitname, [
                     'name'  => 'massiveaction',
@@ -1240,7 +1249,7 @@ class MassiveAction
 
                 echo "<table width='100%'><tr>";
                 echo "<td>";
-                echo __('How many copies do you want to create?');
+                echo __s('How many copies do you want to create?');
                 echo "</td><tr>";
                 echo "<td>" . Html::input("nb_copy", [
                     'id'     => "nb_copy$rand",
@@ -1251,11 +1260,11 @@ class MassiveAction
                 echo "</td>";
                 echo "</tr></table>";
 
-                echo "<br>\n";
+                echo "<br>";
 
                 $submitname = "<i class='fas fa-save'></i><span>" . _sx('button', 'Post') . "</span>";
                 if (isset($ma->POST['submitname']) && $ma->POST['submitname']) {
-                      $submitname = stripslashes($ma->POST['submitname']);
+                      $submitname = $ma->POST['submitname'];
                 }
                 echo Html::submit($submitname, [
                     'name'  => 'massiveaction',
@@ -1265,7 +1274,7 @@ class MassiveAction
                 return true;
 
             case 'add_transfer_list':
-                echo _n(
+                echo _sn(
                     "Are you sure you want to add this item to transfer list?",
                     "Are you sure you want to add these items to transfer list?",
                     count($ma->items, COUNT_RECURSIVE) - count($ma->items)
@@ -1279,8 +1288,8 @@ class MassiveAction
                 return true;
 
             case 'amend_comment':
-                echo __("Amendment to insert");
-                echo ("<br><br>");
+                echo __s("Amendment to insert");
+                echo "<br><br>";
                 Html::textarea([
                     'name' => 'amendment'
                 ]);
@@ -1293,8 +1302,8 @@ class MassiveAction
                 return true;
 
             case 'add_note':
-                echo __("New Note");
-                echo ("<br><br>");
+                echo __s("New Note");
+                echo "<br><br>";
                 Html::textarea([
                     'name' => 'add_note'
                 ]);
@@ -1319,8 +1328,12 @@ class MassiveAction
      **/
     public function updateProgressBars()
     {
+        if (isAPI()) {
+            // No progress bar on API
+            return;
+        }
 
-        if ($this->timer->getTime() > 1) {
+        if ((microtime(true) - $this->start_time) > 1000) {
            // If the action's delay is more than one second, the display progress bars
             $this->display_progress_bars = true;
         }
@@ -1328,7 +1341,7 @@ class MassiveAction
         if ($this->display_progress_bars) {
             if ($this->progress_bar_displayed !== true) {
                 Html::progressBar('main_' . $this->identifier, ['create'  => true,
-                    'message' => $this->action_name
+                    'message' => htmlescape($this->action_name)
                 ]);
                 $this->progress_bar_displayed         = true;
                 $this->fields_to_remove_when_reload[] = 'progress_bar_displayed';
@@ -1349,7 +1362,8 @@ class MassiveAction
                     $percent = 100 * $nb_done / count($this->items[$itemtype]);
                     Html::progressBar(
                         'itemtype_' . $this->identifier,
-                        ['message' => $itemtype::getTypeName(Session::getPluralNumber()),
+                        [
+                            'message' => htmlescape($itemtype::getTypeName(Session::getPluralNumber())),
                             'percent' => $percent
                         ]
                     );
@@ -1393,7 +1407,7 @@ class MassiveAction
 
     /**
      * Process the specific massive actions for severl itemtypes
-     * @return array of the results for the actions
+     * @return void
      **/
     public function processForSeveralItemtypes()
     {
@@ -1412,6 +1426,7 @@ class MassiveAction
         CommonDBTM $item,
         array $ids
     ) {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $action = $ma->getAction();
@@ -1512,15 +1527,17 @@ class MassiveAction
                 $searchopt = Search::getCleanedOptions($item->getType(), UPDATE);
                 $input     = $ma->POST;
                 if (isset($searchopt[$index])) {
-                   /// Infocoms case
+                    // Infocoms case
                     if (Search::isInfocomOption($item->getType(), $index)) {
                         $ic               = new Infocom();
                         $link_entity_type = -1;
-                       /// Specific entity item
+                        $is_recursive     = 0;
+                        // Specific entity item
                         if ($searchopt[$index]["table"] == "glpi_suppliers") {
                              $ent = new Supplier();
                             if ($ent->getFromDB($input[$input["field"]])) {
                                 $link_entity_type = $ent->fields["entities_id"];
+                                $is_recursive     = $ent->fields["is_recursive"];
                             }
                         }
                         foreach ($ids as $key) {
@@ -1528,7 +1545,7 @@ class MassiveAction
                                 if (
                                     ($link_entity_type < 0)
                                     || ($link_entity_type == $item->getEntityID())
-                                    || ($ent->fields["is_recursive"]
+                                    || ($is_recursive
                                     && in_array(
                                         $link_entity_type,
                                         getAncestorsOf(
@@ -1576,9 +1593,9 @@ class MassiveAction
                                 $ma->addMessage($item->getErrorMessage(ERROR_NOT_FOUND));
                             }
                         }
-                    } else { /// Not infocoms
+                    } else { // Not infocoms
                         $link_entity_type = [];
-                       /// Specific entity item
+                        // Specific entity item
                         $itemtable = getTableForItemType($item->getType());
                         $itemtype2 = getItemTypeForTable($searchopt[$index]["table"]);
                         if ($item2 = getItemForItemtype($itemtype2)) {
@@ -1651,8 +1668,10 @@ class MassiveAction
                     if ($item->can($id, CREATE)) {
                         // recovers the item from DB
                         if ($item->getFromDB($id)) {
-                            $succeed = $item->cloneMultiple($input["nb_copy"]);
-                            if ($succeed) {
+                            if (
+                                method_exists($item, "cloneMultiple")
+                                && $item->cloneMultiple($input["nb_copy"])
+                            ) {
                                 $ma->itemDone($item->getType(), $id, MassiveAction::ACTION_OK);
                             } else {
                                 $ma->itemDone($item->getType(), $id, MassiveAction::ACTION_KO);
@@ -1684,20 +1703,20 @@ class MassiveAction
             case 'amend_comment':
                 $item->getEmpty();
 
-               // Check the itemtype is a valid target
+                // Check the itemtype is a valid target
                 if (!array_key_exists('comment', $item->fields)) {
                     $ma->addMessage($item->getErrorMessage(ERROR_COMPAT));
                     break;
                 }
 
-               // Load input
+                // Load input
                 $input = $ma->getInput();
                 $amendment = $input['amendment'];
 
                 foreach ($ids as $id) {
                     $item->getFromDB($id);
 
-                   // Check rights
+                    // Check rights
                     if (!$item->canUpdateItem()) {
                         $ma->itemDone($item->getType(), $id, MassiveAction::ACTION_KO);
                         $ma->addMessage($item->getErrorMessage(ERROR_RIGHT));
@@ -1706,15 +1725,15 @@ class MassiveAction
 
                     $comment = $item->fields['comment'];
                     if (is_null($comment) || $comment == "") {
-                       // If the comment was empty, use directly the amendment
+                        // If the comment was empty, use directly the amendment
                         $comment = $amendment;
                     } else {
-                       // If there is already a comment, insert some padding then
-                       // the amendment
+                        // If there is already a comment, insert some padding then
+                        // the amendment
                         $comment .= "\n\n$amendment";
                     }
 
-                   // Update the comment
+                    // Update the comment
                     $success = $item->update([
                         'id'      => $id,
                         'comment' => $comment
@@ -1730,13 +1749,13 @@ class MassiveAction
                 break;
 
             case 'add_note':
-               // Check rights
+                // Check rights
                 if (!Session::haveRight($item::$rightname, UPDATENOTE)) {
                     $ma->addMessage($item->getErrorMessage(ERROR_RIGHT));
                     break;
                 }
 
-               // Load input
+                // Load input
                 $input = $ma->getInput();
                 $content = $input['add_note'];
 
@@ -1796,12 +1815,13 @@ class MassiveAction
      * Update the progress if necessary.
      *
      * @param string  $itemtype    the type of the item that has been done
-     * @param integer $id          id or array of ids of the item(s) that have been done.
+     * @param integer|array $id    id or array of ids of the item(s) that have been done.
      * @param integer $result
      *                self::NO_ACTION      in case of no specific action (used internally for older actions)
      *                MassiveAction::ACTION_OK      everything is OK for the action
      *                MassiveAction::ACTION_KO      something went wrong for the action
      *                MassiveAction::ACTION_NORIGHT not anough right for the action
+     * @phpstan-param array<integer>|integer $id
      **/
     public function itemDone($itemtype, $id, $result)
     {
@@ -1847,7 +1867,7 @@ class MassiveAction
         $this->nb_done += $number;
 
        // If delay is to big, then reload !
-        if ($this->timer->getTime() > $this->timeout_delay) {
+        if ((microtime(true) - $this->start_time) > ($this->timeout_delay * 1000)) {
             Html::redirect($_SERVER['PHP_SELF'] . '?identifier=' . $this->identifier);
         }
 

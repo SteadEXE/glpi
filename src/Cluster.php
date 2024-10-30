@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,12 +33,16 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Features\AssignableItem;
+
 /**
  * Cluster Class
  **/
 class Cluster extends CommonDBTM
 {
     use Glpi\Features\Clonable;
+    use Glpi\Features\State;
+    use AssignableItem;
 
    // From CommonDBTM
     public $dohistory                   = true;
@@ -56,6 +60,11 @@ class Cluster extends CommonDBTM
         return _n('Cluster', 'Clusters', $nb);
     }
 
+    public static function getSectorizedDetails(): array
+    {
+        return ['management', self::class];
+    }
+
     public function defineTabs($options = [])
     {
         $ong = [];
@@ -65,7 +74,7 @@ class Cluster extends CommonDBTM
          ->addStandardTab('NetworkPort', $ong, $options)
          ->addStandardTab('Contract_Item', $ong, $options)
          ->addStandardTab('Document_Item', $ong, $options)
-         ->addStandardTab('Ticket', $ong, $options)
+         ->addStandardTab('Item_Ticket', $ong, $options)
          ->addStandardTab('Item_Problem', $ong, $options)
          ->addStandardTab('Change_Item', $ong, $options)
          ->addStandardTab('Appliance_Item', $ong, $options)
@@ -80,12 +89,21 @@ class Cluster extends CommonDBTM
         $tab = parent::rawSearchOptions();
 
         $tab[] = [
+            'id'                 => 2,
+            'table'              => self::getTable(),
+            'field'              => 'id',
+            'name'               => __('ID'),
+            'datatype'           => 'number',
+            'massiveaction'      => false,
+        ];
+
+        $tab[] = [
             'id'                 => '31',
-            'table'              => 'glpi_states',
+            'table'              => State::getTable(),
             'field'              => 'completename',
             'name'               => __('Status'),
             'datatype'           => 'dropdown',
-            'condition'          => ['is_visible_cluster' => 1]
+            'condition'          => $this->getStateVisibilityCriteria()
         ];
 
         $tab[] = [
@@ -127,7 +145,7 @@ class Cluster extends CommonDBTM
             'table'              => 'glpi_users',
             'field'              => 'name',
             'linkfield'          => 'users_id_tech',
-            'name'               => __('Technician in charge of the hardware'),
+            'name'               => __('Technician in charge'),
             'datatype'           => 'dropdown',
             'right'              => 'own_ticket'
         ];
@@ -136,9 +154,20 @@ class Cluster extends CommonDBTM
             'id'                 => '49',
             'table'              => 'glpi_groups',
             'field'              => 'completename',
-            'linkfield'          => 'groups_id_tech',
-            'name'               => __('Group in charge of the hardware'),
+            'linkfield'          => 'groups_id',
+            'name'               => __('Group in charge'),
             'condition'          => ['is_assign' => 1],
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_groups_items',
+                    'joinparams'         => [
+                        'jointype'           => 'itemtype_item',
+                        'condition'          => ['NEWTABLE.type' => Group_Item::GROUP_TYPE_TECH]
+                    ]
+                ]
+            ],
+            'forcegroupby'       => true,
+            'massiveaction'      => false,
             'datatype'           => 'dropdown'
         ];
 
@@ -155,6 +184,28 @@ class Cluster extends CommonDBTM
                 Item_Cluster::class,
             ]
         );
+    }
+
+    /**
+     * Get the cluster of an item
+     *
+     * @param CommonDBTM $item
+     *
+     * @return Cluster|null
+     */
+    public static function getClusterByItem(CommonDBTM $item): ?Cluster
+    {
+        $cluster = new self();
+        $item_cluster = new Item_Cluster();
+        if (
+            $item_cluster->getFromDBByCrit(['itemtype' => $item->getType(), 'items_id' => $item->getID()])
+            && $item_cluster->fields['clusters_id'] != 0
+            && $cluster->getFromDB($item_cluster->fields['clusters_id'])
+        ) {
+            return $cluster;
+        }
+
+        return null;
     }
 
 

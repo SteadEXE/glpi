@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -37,14 +37,12 @@
  * @since 0.85
  */
 
-include('../inc/includes.php');
-
 header("Content-Type: text/html; charset=UTF-8");
 Html::header_nocache();
 
 Session::checkRight("dropdown", UPDATE);
 if (isset($_POST['itemtype']) && isset($_POST['language'])) {
-    $item = new $_POST['itemtype']();
+    $item = getItemForItemtype($_POST['itemtype']);
     $item->getFromDB($_POST['items_id']);
     DropdownTranslation::dropdownFields($item, $_POST['language']);
 }

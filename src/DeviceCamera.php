@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -44,7 +44,6 @@ class DeviceCamera extends CommonDevice
 
     public function defineTabs($options = [])
     {
-
         $ong = [];
         $this->addDefaultFormTab($ong)
          ->addImpactTab($ong, $options)
@@ -114,15 +113,15 @@ class DeviceCamera extends CommonDevice
 
         $tab[] = [
             'id'                 => '11',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'flashunit',
             'name'               => __('Flashunit'),
-            'datatype'           => 'boolean',
+            'datatype'           => 'bool',
         ];
 
         $tab[] = [
             'id'                 => '12',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'lensfacing',
             'name'               => __('Lensfacing'),
             'datatype'           => 'string',
@@ -130,7 +129,7 @@ class DeviceCamera extends CommonDevice
 
         $tab[] = [
             'id'                 => '13',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'orientation',
             'name'               => __('orientation'),
             'datatype'           => 'string',
@@ -138,7 +137,7 @@ class DeviceCamera extends CommonDevice
 
         $tab[] = [
             'id'                 => '14',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'focallength',
             'name'               => __('Focal length'),
             'datatype'           => 'string',
@@ -146,7 +145,7 @@ class DeviceCamera extends CommonDevice
 
         $tab[] = [
             'id'                 => '15',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'sensorsize',
             'name'               => __('Sensor size'),
             'datatype'           => 'string',
@@ -154,7 +153,7 @@ class DeviceCamera extends CommonDevice
 
         $tab[] = [
             'id'                 => '17',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'support',
             'name'               => __('Support'),
             'datatype'           => 'string',
@@ -166,8 +165,8 @@ class DeviceCamera extends CommonDevice
     public static function getHTMLTableHeader(
         $itemtype,
         HTMLTableBase $base,
-        HTMLTableSuperHeader $super = null,
-        HTMLTableHeader $father = null,
+        ?HTMLTableSuperHeader $super = null,
+        ?HTMLTableHeader $father = null,
         array $options = []
     ) {
 
@@ -188,12 +187,11 @@ class DeviceCamera extends CommonDevice
     }
 
     public function getHTMLTableCellForItem(
-        HTMLTableRow $row = null,
-        CommonDBTM $item = null,
-        HTMLTableCell $father = null,
+        ?HTMLTableRow $row = null,
+        ?CommonDBTM $item = null,
+        ?HTMLTableCell $father = null,
         array $options = []
     ) {
-
         $column = parent::getHTMLTableCellForItem($row, $item, $father, $options);
 
         if ($column == $father) {
@@ -225,6 +223,7 @@ class DeviceCamera extends CommonDevice
                 $father
             );
         }
+        return null;
     }
 
     public function getImportCriteria()

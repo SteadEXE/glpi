@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -35,12 +35,13 @@
 
 use Glpi\Socket;
 
-include('../inc/includes.php');
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
 
 // Send UTF8 Headers
 header("Content-Type: text/html; charset=UTF-8");
 Html::header_nocache();
-Session::checkLoginUser();
+Session::checkCentralAccess();
 
 $action = $_POST['action'] ?? $_GET["action"];
 
@@ -50,22 +51,20 @@ switch ($action) {
             $_POST['itemtype']::dropdown(['name'                => $_POST['dom_name'],
                 'rand'                => $_POST['dom_rand'],
                 'display_emptychoice' => true,
-                'display_dc_position' => true,
+                'display_dc_position' => in_array($_POST['itemtype'], $CFG_GLPI['rackable_types']),
                 'width'               => '100%',
             ]);
         }
         break;
 
     case 'get_socket_dropdown':
-        if (
-            (isset($_GET['itemtype']) && class_exists($_GET['itemtype']))
-            && isset($_GET['items_id'])
-        ) {
+        if (isset($_GET['itemtype'], $_GET['items_id']) && class_exists($_GET['itemtype'])) {
             Socket::dropdown(['name'         =>  $_GET['dom_name'],
                 'condition'    => ['socketmodels_id'   => $_GET['socketmodels_id'] ?? 0,
                     'itemtype'           => $_GET['itemtype'],
                     'items_id'           => $_GET['items_id']
                 ],
+                'used'         => (int)$_GET['items_id'] > 0 ? Socket::getSocketAlreadyLinked($_GET['itemtype'], (int)$_GET['items_id']) : [],
                 'displaywith'  => ['itemtype', 'items_id', 'networkports_id'],
             ]);
         }
@@ -76,18 +75,16 @@ switch ($action) {
              'display_emptychoice' => true,
              'condition'           => ['items_id' => $_GET['items_id'],
                  'itemtype' => $_GET['itemtype']
-             ]
+             ],
+             'comments' => false
          ]);
         break;
 
 
     case 'get_item_breadcrum':
-        if (
-            (isset($_GET['itemtype']) && class_exists($_GET['itemtype']))
-            && isset($_GET['items_id']) && $_GET['items_id'] > 0
-        ) {
-            if (method_exists($_GET['itemtype'], 'getDcBreadcrumbSpecificValueToDisplay')) {
-                echo $_GET['itemtype']::getDcBreadcrumbSpecificValueToDisplay($_GET['items_id']);
+        if (isset($_GET['itemtype'], $_GET['items_id']) && class_exists($_GET['itemtype']) && $_GET['items_id'] > 0) {
+            if (method_exists($_GET['itemtype'], 'renderDcBreadcrumb')) {
+                echo $_GET['itemtype']::renderDcBreadcrumb($_GET['items_id']);
             }
         } else {
             echo "";

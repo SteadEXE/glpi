@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,6 +33,8 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\DBAL\QueryFunction;
+
 /// Class DeviceMemory
 class DeviceMemory extends CommonDevice
 {
@@ -43,10 +45,8 @@ class DeviceMemory extends CommonDevice
         return _n('Memory', 'Memory', $nb);
     }
 
-
     public function getAdditionalFields()
     {
-
         return array_merge(
             parent::getAdditionalFields(),
             [
@@ -59,8 +59,9 @@ class DeviceMemory extends CommonDevice
                 ],
                 [
                     'name'  => 'frequence',
-                    'label' => __('Frequency'),
-                    'type'  => 'text',
+                    'label' => sprintf(__('%1$s (%2$s)'), __('Frequency'), __('MHz')),
+                    'type'  => 'integer',
+                    'min'   => 0,
                     'unit'  => __('MHz')
                 ],
                 [
@@ -77,25 +78,24 @@ class DeviceMemory extends CommonDevice
         );
     }
 
-
     public function rawSearchOptions()
     {
         $tab = parent::rawSearchOptions();
 
         $tab[] = [
             'id'                 => '11',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'size_default',
             'name'               => __('Size by default'),
-            'datatype'           => 'string',
+            'datatype'           => 'integer',
         ];
 
         $tab[] = [
             'id'                 => '12',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'frequence',
-            'name'               => __('Frequency'),
-            'datatype'           => 'string',
+            'name'               => sprintf(__('%1$s (%2$s)'), __('Frequency'), __('MHz')),
+            'datatype'           => 'integer',
         ];
 
         $tab[] = [
@@ -117,16 +117,14 @@ class DeviceMemory extends CommonDevice
         return $tab;
     }
 
-
     /**
      * @since 0.85
-     * @param $input
+     * @param array $input
      *
-     * @return number
+     * @return array
      **/
     public function prepareInputForAddOrUpdate($input)
     {
-
         foreach (['size_default'] as $field) {
             if (isset($input[$field]) && !is_numeric($input[$field])) {
                 $input[$field] = 0;
@@ -135,24 +133,21 @@ class DeviceMemory extends CommonDevice
         return $input;
     }
 
-
     public function prepareInputForAdd($input)
     {
         return $this->prepareInputForAddOrUpdate($input);
     }
-
 
     public function prepareInputForUpdate($input)
     {
         return $this->prepareInputForAddOrUpdate($input);
     }
 
-
     public static function getHTMLTableHeader(
         $itemtype,
         HTMLTableBase $base,
-        HTMLTableSuperHeader $super = null,
-        HTMLTableHeader $father = null,
+        ?HTMLTableSuperHeader $super = null,
+        ?HTMLTableHeader $father = null,
         array $options = []
     ) {
 
@@ -166,19 +161,17 @@ class DeviceMemory extends CommonDevice
             case 'Computer':
                 Manufacturer::getHTMLTableHeader(__CLASS__, $base, $super, $father, $options);
                 $base->addHeader('devicememory_type', _n('Type', 'Types', 1), $super, $father);
-                $base->addHeader('devicememory_frequency', __('Frequency'), $super, $father);
+                $base->addHeader('devicememory_frequency', sprintf(__('%1$s (%2$s)'), __('Frequency'), __('MHz')), $super, $father);
                 break;
         }
     }
 
-
     public function getHTMLTableCellForItem(
-        HTMLTableRow $row = null,
-        CommonDBTM $item = null,
-        HTMLTableCell $father = null,
+        ?HTMLTableRow $row = null,
+        ?CommonDBTM $item = null,
+        ?HTMLTableCell $father = null,
         array $options = []
     ) {
-
         $column = parent::getHTMLTableCellForItem($row, $item, $father, $options);
 
         if ($column == $father) {
@@ -208,13 +201,13 @@ class DeviceMemory extends CommonDevice
                 }
                 break;
         }
+        return null;
     }
-
 
     public function getImportCriteria()
     {
-
-        return ['designation'          => 'equal',
+        return [
+            'designation'          => 'equal',
             'devicememorytypes_id' => 'equal',
             'manufacturers_id'     => 'equal',
             'frequence'            => 'delta:10'
@@ -223,8 +216,6 @@ class DeviceMemory extends CommonDevice
 
     public static function rawSearchOptionsToAdd($class, $main_joinparams)
     {
-        global $DB;
-
         $tab = [];
 
         $tab[] = [
@@ -256,16 +247,15 @@ class DeviceMemory extends CommonDevice
             'width'              => 100,
             'massiveaction'      => false,
             'joinparams'         => $main_joinparams,
-            'computation'        =>
-            '(SUM(' . $DB->quoteName('TABLE.size') . ') / COUNT(' .
-            $DB->quoteName('TABLE.id') . '))
-            * COUNT(DISTINCT ' . $DB->quoteName('TABLE.id') . ')',
+            'computation'        => '(' .
+                QueryFunction::sum('TABLE.size') . '/' .
+                QueryFunction::count('TABLE.id') . ') * ' .
+                QueryFunction::count('TABLE.id', true),
             'nometa'             => true, // cannot GROUP_CONCAT a SUM
         ];
 
         return $tab;
     }
-
 
     public static function getIcon()
     {

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,6 +34,8 @@
  */
 
 use Glpi\Application\View\TemplateRenderer;
+use Glpi\DBAL\QueryExpression;
+use Glpi\DBAL\QueryFunction;
 
 /**
  * Infocom class
@@ -69,6 +71,7 @@ class Infocom extends CommonDBChild
      **/
     public static function canApplyOn($item)
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
        // All devices are subjects to infocom !
@@ -98,12 +101,14 @@ class Infocom extends CommonDBChild
      **/
     public static function getItemtypesThatCanHave()
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
-        return array_merge(
+        $types = array_merge(
             $CFG_GLPI['infocom_types'],
             Item_Devices::getDeviceTypes()
         );
+        return array_unique($types);
     }
 
 
@@ -138,14 +143,18 @@ class Infocom extends CommonDBChild
     {
 
        // Can exists on template
-        if (Session::haveRight(self::$rightname, READ)) {
+        if (
+            Session::haveRight(self::$rightname, READ)
+            && ($item instanceof CommonDBTM)
+        ) {
             $nb = 0;
             switch ($item->getType()) {
                 case 'Supplier':
+                    /** @var Supplier $item */
                     if ($_SESSION['glpishow_count_on_tabs']) {
                         $nb = self::countForSupplier($item);
                     }
-                    return self::createTabEntry(_n('Item', 'Items', Session::getPluralNumber()), $nb);
+                    return self::createTabEntry(_n('Item', 'Items', Session::getPluralNumber()), $nb, $item::getType());
 
                 default:
                     if ($_SESSION['glpishow_count_on_tabs']) {
@@ -156,7 +165,7 @@ class Infocom extends CommonDBChild
                             ]
                         );
                     }
-                    return self::createTabEntry(__('Management'), $nb);
+                    return self::createTabEntry(__('Management'), $nb, $item::getType());
             }
         }
         return '';
@@ -173,6 +182,7 @@ class Infocom extends CommonDBChild
 
         switch ($item->getType()) {
             case 'Supplier':
+                /** @var Supplier $item */
                 $item->showInfocoms();
                 break;
 
@@ -268,6 +278,156 @@ class Infocom extends CommonDBChild
         return false;
     }
 
+    /**
+     * @param class-string<CommonDBTM> $itemtype The itemtype to get data for. The itemtype must have a `ticket_tco` field.
+     * @param string $begin Date string for the beginning of the period to retrieve (based on buy or use date)
+     * @param string $end Date string for the end of the period to retrieve (based on buy or use date)
+     * @return ?array
+     */
+    public static function getDataForAssetInfocomReport(string $itemtype, string $begin, string $end): ?array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+        $itemtable = getTableForItemType($itemtype);
+        if (!$DB->fieldExists($itemtable, "ticket_tco", false)) {
+            return null;
+        }
+
+        $criteria = [
+            'SELECT'       => [
+                'glpi_infocoms.*',
+                "$itemtable.name AS itemname",
+                "$itemtable.ticket_tco",
+                'glpi_entities.completename AS entityname',
+                'glpi_entities.id AS entID'
+
+            ],
+            'FROM'         => 'glpi_infocoms',
+            'INNER JOIN'   => [
+                $itemtable  => [
+                    'ON'  => [
+                        'glpi_infocoms'   => 'items_id',
+                        $itemtable        => 'id', [
+                            'AND' => [
+                                'glpi_infocoms.itemtype'   => $itemtype
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            'LEFT JOIN'    => [
+                'glpi_entities'   => [
+                    'ON'  => [
+                        'glpi_entities'   => 'id',
+                        $itemtable        => 'entities_id'
+                    ]
+                ]
+            ],
+            'WHERE'        => [
+                "$itemtable.is_template" => 0
+            ] + getEntitiesRestrictCriteria($itemtable) + $itemtype::getSystemSQLCriteria(),
+            'ORDERBY'      => ['entityname ASC', 'buy_date', 'use_date']
+        ];
+
+        if (!empty($begin)) {
+            $criteria['WHERE'][] = [
+                'OR'  => [
+                    'glpi_infocoms.buy_date'   => ['>=', $begin],
+                    'glpi_infocoms.use_date'   => ['>=', $begin]
+                ]
+            ];
+        }
+
+        if (!empty($end)) {
+            $criteria['WHERE'][] = [
+                'OR'  => [
+                    'glpi_infocoms.buy_date'   => ['<=', $end],
+                    'glpi_infocoms.use_date'   => ['<=', $end]
+                ]
+            ];
+        }
+
+        return iterator_to_array($DB->request($criteria));
+    }
+
+    /**
+     * @param class-string<CommonDBTM> $itemtype The itemtype to get data for. The itemtype must have a `ticket_tco` field.
+     * @param string $begin Date string for the beginning of the period to retrieve (based on buy or use date)
+     * @param string $end Date string for the end of the period to retrieve (based on buy or use date)
+     * @return ?array
+     */
+    public static function getDataForOtherInfocomReport(string $itemtype, string $begin, string $end): ?array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+        $itemtable = getTableForItemType($itemtype);
+        if ($DB->fieldExists($itemtable, "ticket_tco", false)) {
+            // This is already handled by the asset infocom report
+            return null;
+        }
+
+        $criteria = [
+            'SELECT'       => 'glpi_infocoms.*',
+            'FROM'         => 'glpi_infocoms',
+            'INNER JOIN'   => [
+                $itemtable  => [
+                    'ON'  => [
+                        $itemtable        => 'id',
+                        'glpi_infocoms'   => 'items_id', [
+                            'AND' => [
+                                'glpi_infocoms.itemtype' => $itemtype
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            'WHERE'        => $itemtype::getSystemSQLCriteria(),
+        ];
+
+        switch ($itemtype) {
+            case 'SoftwareLicense':
+                $criteria['INNER JOIN']['glpi_softwares'] = [
+                    'ON'  => [
+                        'glpi_softwarelicenses' => 'softwares_id',
+                        'glpi_softwares'        => 'id'
+                    ]
+                ];
+                $criteria['WHERE'][] =  getEntitiesRestrictCriteria("glpi_softwarelicenses");
+                break;
+            default:
+                if (is_a($itemtype, CommonDBChild::class, true)) {
+                    $childitemtype = $itemtype::$itemtype; // acces to child via $itemtype static
+                    $criteria['INNER JOIN'][$childitemtype::getTable()] = [
+                        'ON'  => [
+                            $itemtype::getTable() => $itemtype::$items_id,
+                            $childitemtype::getTable() => 'id'
+                        ]
+                    ];
+                    $criteria['WHERE'][] =  getEntitiesRestrictCriteria($itemtable);
+                }
+                break;
+        }
+
+        if (!empty($begin)) {
+            $criteria['WHERE'][] = [
+                'OR'  => [
+                    'glpi_infocoms.buy_date'   => ['>=', $begin],
+                    'glpi_infocoms.use_date'   => ['>=', $begin]
+                ]
+            ];
+        }
+        if (!empty($end)) {
+            $criteria['WHERE'][] = [
+                'OR'  => [
+                    'glpi_infocoms.buy_date'   => ['<=', $end],
+                    'glpi_infocoms.use_date'   => ['<=', $end]
+                ]
+            ];
+        }
+
+        $criteria['WHERE'] = array_filter($criteria['WHERE']);
+        return iterator_to_array($DB->request($criteria));
+    }
 
     public function prepareInputForAdd($input)
     {
@@ -284,8 +444,8 @@ class Infocom extends CommonDBChild
     /**
      * Fill, if necessary, automatically some dates when status changes
      *
-     * @param item          CommonDBTM object: the item whose status have changed
-     * @param action_add    true if object is added, false if updated (true by default)
+     * @param CommonDBTM $item          CommonDBTM object: the item whose status have changed
+     * @param boolean $action_add    true if object is added, false if updated (true by default)
      *
      * @return void
      **/
@@ -332,17 +492,17 @@ class Infocom extends CommonDBChild
     /**
      * Automatically manage copying one date to another is necessary
      *
-     * @param infocoms   array of item's infocom to modify
-     * @param field            the date to modify (default '')
-     * @param action           the action to peform (copy from another date) (default 0)
-     * @param params     array of additional parameters needed to perform the task
+     * @param array $infocoms   array of item's infocom to modify
+     * @param string $field            the date to modify (default '')
+     * @param integer $action           the action to peform (copy from another date) (default 0)
+     * @param array $params     array of additional parameters needed to perform the task
      *
      * @return void
      **/
     public static function autofillDates(&$infocoms = [], $field = '', $action = 0, $params = [])
     {
 
-        if (isset($infocoms[$field])) {
+        if (isset($infocoms[$field]) || is_null($infocoms[$field])) {
             switch ($action) {
                 default:
                 case 0:
@@ -397,15 +557,18 @@ class Infocom extends CommonDBChild
     public function prepareInputForUpdate($input)
     {
 
-       //Check if one or more dates needs to be updated
+        //Check if one or more dates needs to be updated
         foreach (self::getAutoManagemendDatesFields() as $key => $field) {
             $result = Entity::getUsedConfig($key, $this->fields['entities_id']);
 
-           //Only update date if it's empty in DB. Otherwise do nothing
+            //Only update date if it's empty in DB. Otherwise do nothing
             if (
                 ($result > 0)
                 && !isset($this->fields[$field])
             ) {
+                if (!isset($input[$field])) {
+                    $input[$field] = null;
+                }
                 self::autofillDates($input, $field, $result);
             }
         }
@@ -448,7 +611,7 @@ class Infocom extends CommonDBChild
                     Html::convDate($budget->fields['begin_date']),
                     Html::convDate($budget->fields['end_date'])
                 );
-                Session::addMessageAfterRedirect($msg, false, ERROR);
+                Session::addMessageAfterRedirect(htmlescape($msg), false, ERROR);
             }
         }
     }
@@ -482,7 +645,11 @@ class Infocom extends CommonDBChild
      **/
     public static function cronInfocom($task = null)
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         if (!$CFG_GLPI["use_notifications"]) {
             return 0;
@@ -513,17 +680,20 @@ class Infocom extends CommonDBChild
                     ]
                 ],
                 'WHERE'     => [
-                    new \QueryExpression(
+                    new QueryExpression(
                         '(' . $DB->quoteName('glpi_infocoms.alert') . ' & ' . pow(2, Alert::END) . ') > 0'
                     ),
                     "$table.entities_id"       => $entity,
                     "$table.warranty_duration" => ['>', 0],
                     'NOT'                      => ["$table.warranty_date" => null],
-                    new \QueryExpression(
-                        'DATEDIFF(ADDDATE(' . $DB->quoteName('glpi_infocoms.warranty_date') . ', INTERVAL (' .
-                        $DB->quoteName('glpi_infocoms.warranty_duration') . ') MONTH), CURDATE() ) <= ' .
-                        $DB->quoteValue($before)
-                    ),
+                    new QueryExpression(QueryFunction::dateDiff(
+                        expression1: QueryFunction::dateAdd(
+                            date: 'glpi_infocoms.warranty_date',
+                            interval: new QueryExpression($DB::quoteName('glpi_infocoms.warranty_duration')),
+                            interval_unit: 'MONTH'
+                        ),
+                        expression2: QueryFunction::curdate()
+                    ) . ' <= ' . $DB::quoteValue($before)),
                     'glpi_alerts.date'         => null
                 ]
             ]);
@@ -575,14 +745,14 @@ class Infocom extends CommonDBChild
                     ));
                     $task->addVolume(1);
                 } else {
-                    Session::addMessageAfterRedirect(sprintf(
+                    Session::addMessageAfterRedirect(htmlescape(sprintf(
                         __('%1$s: %2$s'),
                         Dropdown::getDropdownName(
                             "glpi_entities",
                             $entity
                         ),
                         $message
-                    ));
+                    )));
                 }
 
                 $alert             = new Alert();
@@ -600,7 +770,7 @@ class Infocom extends CommonDBChild
                 if ($task) {
                     $task->log($msg);
                 } else {
-                    Session::addMessageAfterRedirect($msg, false, ERROR);
+                    Session::addMessageAfterRedirect(htmlescape($msg), false, ERROR);
                 }
             }
         }
@@ -627,7 +797,7 @@ class Infocom extends CommonDBChild
             return $tmp;
         }
        // Default value for display
-        $tmp[0] = ' ';
+        $tmp[0] = __('None');
 
         if (isset($tmp[$val])) {
             return $tmp[$val];
@@ -754,20 +924,26 @@ class Infocom extends CommonDBChild
     /**
      * Show infocom link to display modal
      *
-     * @param $itemtype   integer  item type
-     * @param $device_id  integer  item ID
+     * @param integer $itemtype item type
+     * @param integer $device_id item ID
+     * @param boolean $display  display or not the link (default true)
      *
-     * @return float
+     * @return void|string
+     * @phpstan-return $display ? void : string
      **/
-    public static function showDisplayLink($itemtype, $device_id)
+    public static function showDisplayLink($itemtype, $device_id, bool $display = true)
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         if (
             !Session::haveRight(self::$rightname, READ)
             || !($item = getItemForItemtype($itemtype))
         ) {
-            return false;
+            return;
         }
 
         $result = $DB->request([
@@ -780,24 +956,59 @@ class Infocom extends CommonDBChild
         ])->current();
 
         $add    = "add";
-        $text   = __('Add');
+        $text   = __s('Add');
         if ($result['cpt'] > 0) {
             $add  = "";
-            $text = _x('button', 'Show');
+            $text = _sx('button', 'Show');
         } else if (!Infocom::canUpdate()) {
-            return false;
+            return;
         }
 
+        $out = '';
         if ($item->canView()) {
-            echo "<span data-bs-toggle='modal' data-bs-target='#infocom$itemtype$device_id' style='cursor:pointer'>
+            $out .= "<span class='infocom_link' style='cursor:pointer' data-itemtype='{$itemtype}' data-items_id='{$device_id}'>
                <img src=\"" . $CFG_GLPI["root_doc"] . "/pics/dollar$add.png\" alt=\"$text\" title=\"$text\">
                </span>";
-            Ajax::createIframeModalWindow(
-                'infocom' . $itemtype . $device_id,
-                Infocom::getFormURL() .
-                                          "?itemtype=$itemtype&items_id=$device_id",
-                ['height' => 600]
-            );
+            $form_url = Infocom::getFormURL();
+            $html = <<<HTML
+                <div id="infocom_display_modal" class="modal fade" tabindex="-1" role="dialog">
+                    <div class="modal-dialog modal-xl">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                <h3></h3>
+                            </div>
+                            <div class="modal-body">
+                                <iframe id='iframeinfocom_display_modal' class="iframe hidden border-0 w-100" style="height: 600px"></iframe>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+HTML;
+            $js = <<<JS
+                $(() => {
+                    if ($('#infocom_display_modal').length === 0) {
+                        $('body').append(`$html`);
+                        const modal_el = $('#infocom_display_modal');
+                        $(document).on('click', '.infocom_link', (e) => {
+                            modal_el.data('itemtype', e.currentTarget.getAttribute('data-itemtype'));
+                            modal_el.data('items_id', e.currentTarget.getAttribute('data-items_id'));
+                            modal_el.modal('show');
+                        });
+                        modal_el.on('shown.bs.modal', () => {
+                            $('#iframeinfocom_display_modal')
+                                .attr('src', '{$form_url}?itemtype=' + modal_el.data('itemtype') + '&items_id=' + modal_el.data('items_id'))
+                                .removeClass('hidden');
+                        });
+                    }
+                });
+JS;
+            $out .= Html::scriptBlock($js);
+        }
+        if ($display) {
+            echo $out;
+        } else {
+            return $out;
         }
     }
 
@@ -805,11 +1016,11 @@ class Infocom extends CommonDBChild
     /**
      * Calculate amortization values
      *
-     * @param number $value       Purchase value
-     * @param number $duration    Amortise duration
-     * @param string $fiscaldate  Begin of fiscal excercise
-     * @param number $buydate     Buy date
-     * @param number $usedate     Date of use
+     * @param number        $value       Purchase value
+     * @param number        $duration    Amortise duration
+     * @param string        $fiscaldate  Begin of fiscal excercise
+     * @param string $buydate     Buy date
+     * @param string $usedate     Date of use
      *
      * @return array|boolean
      */
@@ -823,9 +1034,9 @@ class Infocom extends CommonDBChild
                 throw new \RuntimeException('Empty date');
             }
             $fiscaldate = new \DateTime($fiscaldate, new DateTimeZone($TZ));
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Session::addMessageAfterRedirect(
-                __('Please fill you fiscal year date in preferences.'),
+                __s('Please fill you fiscal year date in preferences.'),
                 false,
                 ERROR
             );
@@ -842,9 +1053,9 @@ class Infocom extends CommonDBChild
             } else {
                 $usedate = new \DateTime($buydate, new DateTimeZone($TZ));
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Session::addMessageAfterRedirect(
-                __('Please fill either buy or use date in preferences.'),
+                __s('Please fill either buy or use date in preferences.'),
                 false,
                 ERROR
             );
@@ -875,7 +1086,7 @@ class Infocom extends CommonDBChild
                     $fiscal_end->modify('+1 year');
                 }
                 $days = $fiscal_end->diff($usedate);
-                $days = $days->format('%m') * 30 + $days->format('%d');
+                $days = (int) $days->format('%m') * 30 + (int) $days->format('%d');
                 $current_annuity = $annuity * $days / 360;
             } else if ($i == $duration) {
                 $current_annuity = $value;
@@ -932,18 +1143,18 @@ class Infocom extends CommonDBChild
     }
 
     /**
-     * Calculate amortissement for an item
+     * Calculate depreciation for an item
      *
-     * @param integer $type_amort    type d'amortisssment "lineaire=2" ou "degressif=1"
+     * @param integer $type_amort    type of depreciation "linear=2" or "degressive=1"
      * @param number  $va            valeur d'acquisition
-     * @param number  $duree         duree d'amortissement
-     * @param number  $coef          coefficient d'amortissement
-     * @param string  $date_achat    Date d'achat
-     * @param string  $date_use      Date d'utilisation
-     * @param string  $date_tax      date du debut de l'annee fiscale
-     * @param string  $view          "n" pour l'annee en cours ou "all" pour le tableau complet (default 'n')
+     * @param number  $duree         acquisition value
+     * @param number  $coef          amortization coefficient
+     * @param string|null  $date_achat    Date of purchase
+     * @param string|null  $date_use      Startup date
+     * @param string|null  $date_tax      start date of fiscal year
+     * @param string  $view          "n" for the current year or "all" for the complete table (default 'n')
      *
-     * @return float|array
+     * @return float|array|string Depreciation value or array of values. If an error occurs, return '-'.
      **/
     public static function Amort(
         $type_amort,
@@ -1023,7 +1234,15 @@ class Infocom extends CommonDBChild
                     $dureedegressif = $duree - $dureelineaire; // calcul de la duree de l'amortissement
                                                         // en mode degressif
                     $mrt            = $va;
-                  // amortissement degressif pour les premieres annees
+
+                    $tab = [
+                        'annee'    => [],
+                        'vcnetdeb' => [],
+                        'vcnetfin' => [],
+                        'annuite'  => [],
+                    ];
+
+                    // amortissement degressif pour les premieres annees
                     for ($i = 1; $i <= $dureedegressif; $i++) {
                         $tab['annee'][$i]    = $date_Y + $i - 1;
                         $tab['vcnetdeb'][$i] = $mrt; // Pour chaque annee on calcule la valeur comptable nette
@@ -1342,6 +1561,7 @@ class Infocom extends CommonDBChild
             ],
             'searchunit'         => 'MONTH',
             'delayunit'          => 'MONTH',
+            'maybefuture'        => true,
             'forcegroupby'       => true,
             'massiveaction'      => false,
             'joinparams'         => $joinparams
@@ -1661,7 +1881,8 @@ class Infocom extends CommonDBChild
             'table'              => $this->getTable(),
             'field'              => 'itemtype',
             'name'               => _n('Type', 'Types', 1),
-            'datatype'           => 'itemtype',
+            'datatype'           => 'itemtypename',
+            'itemtype_list'      => 'infocom_types',
             'massiveaction'      => false
         ];
 
@@ -1699,25 +1920,15 @@ class Infocom extends CommonDBChild
             'datatype'           => 'bool'
         ];
 
-        return $tab;
-    }
-
-
-    /**
-     * Display debug information for infocom of current object
-     **/
-    public function showDebug()
-    {
-
-        $item = ['item_name'          => '',
-            'warrantyexpiration' => '',
-            'itemtype'           => $this->fields['itemtype'],
-            'items_id'           => $this->fields['items_id']
+        $tab[] = [
+            'id'                 => '173',
+            'table'              => 'glpi_businesscriticities',
+            'field'              => 'completename',
+            'name'               => _n('Business criticity', 'Business criticities', 1),
+            'datatype'           => 'dropdown'
         ];
 
-        $options['entities_id'] = $this->getEntityID();
-        $options['items']       = [$item];
-        NotificationEvent::debugEvent($this, $options);
+        return $tab;
     }
 
 
@@ -1729,13 +1940,14 @@ class Infocom extends CommonDBChild
      * @param integer $deletenotice  period in months of notice (default 0)
      * @param boolean $color         if show expire date in red color (false by default)
      * @param boolean $auto_renew
+     * @param integer $periodicity   renewal periodicity in month if different from addwarranty
      *
-     * @return string expiration date
+     * @return string expiration date automatically converted to the user's preferred date format
      **/
-    public static function getWarrantyExpir($from, $addwarranty, $deletenotice = 0, $color = false, $auto_renew = false)
+    public static function getWarrantyExpir($from, $addwarranty, $deletenotice = 0, $color = false, $auto_renew = false, $periodicity = 0)
     {
 
-       // Life warranty
+        // Life warranty
         if (
             ($addwarranty == -1)
             && ($deletenotice == 0)
@@ -1743,21 +1955,23 @@ class Infocom extends CommonDBChild
             return __('Never');
         }
 
-        if (($from == null) || empty($from)) {
+        if (empty($from)) {
             return "";
         }
 
         $timestamp = strtotime("$from+$addwarranty month -$deletenotice month");
 
-        if ($auto_renew && $addwarranty > 0) {
-            while ($timestamp < time()) {
+        $periodicity = ($periodicity > 0) ? $periodicity : $addwarranty;
+
+        if ($auto_renew && $periodicity > 0) {
+            while ($timestamp < strtotime($_SESSION['glpi_currenttime'])) {
                 $datetime = new DateTime();
                 $datetime->setTimestamp($timestamp);
-                $timestamp = strtotime($datetime->format("Y-m-d H:i:s") . "+$addwarranty month");
+                $timestamp = strtotime($datetime->format("Y-m-d H:i:s") . "+$periodicity month");
             }
         }
 
-        if ($color && ($timestamp < time())) {
+        if ($color && ($timestamp < strtotime($_SESSION['glpi_currenttime']))) {
             return "<span class='red'>" . Html::convDate(date("Y-m-d", $timestamp)) . "</span>";
         }
         return Html::convDate(date("Y-m-d", $timestamp));
@@ -1767,8 +1981,8 @@ class Infocom extends CommonDBChild
     public static function getMassiveActionsForItemtype(
         array &$actions,
         $itemtype,
-        $is_deleted = 0,
-        CommonDBTM $checkitem = null
+        $is_deleted = false,
+        ?CommonDBTM $checkitem = null
     ) {
 
         $action_name = __CLASS__ . MassiveAction::CLASS_ACTION_SEPARATOR . 'activate';
@@ -1778,7 +1992,7 @@ class Infocom extends CommonDBChild
             && static::canCreate()
         ) {
             $actions[$action_name] = "<i class='fa-fw " . self::getIcon() . "'></i>" .
-                                  __('Enable the financial and administrative information');
+                                  __s('Enable the financial and administrative information');
         }
     }
 
@@ -1826,7 +2040,7 @@ class Infocom extends CommonDBChild
      * @since 9.1.7
      * @see CommonDBChild::canUpdateItem()
      **/
-    public function canUpdateItem()
+    public function canUpdateItem(): bool
     {
         return Session::haveRight(static::$rightname, UPDATE);
     }
@@ -1836,7 +2050,7 @@ class Infocom extends CommonDBChild
      * @since 9.1.7
      * @see CommonDBChild::canPurgeItem()
      **/
-    public function canPurgeItem()
+    public function canPurgeItem(): bool
     {
         return Session::haveRight(static::$rightname, PURGE);
     }
@@ -1846,7 +2060,7 @@ class Infocom extends CommonDBChild
      * @since 9.1.7
      * @see CommonDBChild::canCreateItem()
      **/
-    public function canCreateItem()
+    public function canCreateItem(): bool
     {
         return Session::haveRight(static::$rightname, CREATE);
     }
@@ -1862,6 +2076,7 @@ class Infocom extends CommonDBChild
      */
     public static function getTypes($where)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $types_iterator = $DB->request([
@@ -1886,12 +2101,12 @@ class Infocom extends CommonDBChild
      */
     public static function getExcludedTypes()
     {
-        return ['ConsumableItem', 'CartridgeItem', 'Software'];
+        return ['ConsumableItem', 'CartridgeItem'];
     }
 
 
     public static function getIcon()
     {
-        return "fas fa-wallet";
+        return "ti ti-wallet";
     }
 }

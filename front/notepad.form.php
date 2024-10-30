@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,13 +33,12 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Event;
+use Glpi\Exception\Http\BadRequestHttpException;
+
 /**
  * @since 0.85
  */
-
-use Glpi\Event;
-
-include('../inc/includes.php');
 
 $note = new Notepad();
 
@@ -80,5 +79,25 @@ if (isset($_POST['add'])) {
         sprintf(__('%s updates an item'), $_SESSION["glpiname"])
     );
     Html::back();
+} else if (isset($_POST["delete_document"])) {
+    $doc = new Document();
+    $doc->getFromDB(intval($_POST['documents_id']));
+    if ($doc->can($doc->getID(), UPDATE)) {
+        $document_item = new Document_Item();
+        $document_item->deleteByCriteria([
+            'itemtype'     => "Notepad",
+            'items_id'     => (int)$_POST['id'],
+            'documents_id' => $doc->getID()
+        ]);
+    }
+    Html::back();
 }
-Html::displayErrorAndDie("lost");
+
+if (isset($_GET['id']) && $note->getFromDB($_GET['id'])) {
+    /** @var class-string<CommonDBTM> $parent_itemtype */
+    $parent_itemtype = $note->fields['itemtype'];
+    $redirect = $parent_itemtype::getFormURLWithID($note->fields['items_id'], true) . "&forcetab=Notepad$1";
+    Html::redirect($redirect);
+} else {
+    throw new BadRequestHttpException();
+}

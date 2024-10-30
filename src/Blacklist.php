@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,6 +33,8 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Features\Clonable;
+
 /**
  * Blacklist Class
  *
@@ -40,6 +42,8 @@
  **/
 class Blacklist extends CommonDropdown
 {
+    use Clonable;
+
    // From CommonDBTM
     public $dohistory = true;
 
@@ -68,7 +72,7 @@ class Blacklist extends CommonDropdown
         return 0;
     }
 
-    public static function canCreate()
+    public static function canCreate(): bool
     {
         return static::canUpdate();
     }
@@ -77,7 +81,7 @@ class Blacklist extends CommonDropdown
     /**
      * @since 0.85
      */
-    public static function canPurge()
+    public static function canPurge(): bool
     {
         return static::canUpdate();
     }
@@ -261,6 +265,7 @@ class Blacklist extends CommonDropdown
 
     private function loadBlacklists()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $iterator = $DB->request(['FROM' => self::getTable()]);
@@ -467,6 +472,9 @@ class Blacklist extends CommonDropdown
             ], [
                 'name' => 'localhost',
                 'value' => '127.0.0.1'
+            ], [
+                'name' => 'IPV6 localhost',
+                'value' => '::1'
             ]
         ];
 
@@ -556,5 +564,10 @@ class Blacklist extends CommonDropdown
     public static function getIcon()
     {
         return "fas fa-ban";
+    }
+
+    public function getCloneRelations(): array
+    {
+        return [];
     }
 }

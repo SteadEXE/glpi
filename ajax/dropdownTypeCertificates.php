@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,9 +33,15 @@
  * ---------------------------------------------------------------------
  */
 
+/**
+ * @var \DBmysql $DB
+ */
+global $DB;
+
 if (strpos($_SERVER['PHP_SELF'], "dropdownTypeCertificates.php")) {
-    $AJAX_INCLUDE = 1;
-    include('../inc/includes.php');
+    /** @var \Glpi\Controller\LegacyFileLoadController $this */
+    $this->setAjax();
+
     header("Content-Type: text/html; charset=UTF-8");
     Html::header_nocache();
 }
@@ -46,8 +52,6 @@ Session::checkCentralAccess();
 // Make a select box
 $used = [];
 
-/** @global DBmysql $DB */
-
 // Clean used array
 if (
     isset($_POST['used'])
@@ -55,12 +59,13 @@ if (
       && (count($_POST['used']) > 0)
 ) {
     foreach (
-        $DB->request(
-            'glpi_certificates',
-            ['id'                  => $_POST['used'],
+        $DB->request([
+            'FROM' => 'glpi_certificates',
+            'WHERE' => [
+                'id'                  => $_POST['used'],
                 'certificatetypes_id' => $_POST['certificatetype']
             ]
-        ) as $data
+        ]) as $data
     ) {
         $used[$data['id']] = $data['id'];
     }

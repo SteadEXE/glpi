@@ -7,7 +7,7 @@
 #
 # http://glpi-project.org
 #
-# @copyright 2015-2022 Teclib' and contributors.
+# @copyright 2015-2024 Teclib' and contributors.
 # @copyright 2003-2014 by the INDEPNET Development Team.
 # @licence   https://www.gnu.org/licenses/gpl-3.0.html
 #
@@ -87,7 +87,7 @@ then
     fi
 fi
 
-echo "Copying to $WORKING_DIR directory"
+echo "Copying to $WORKING_DIR directory..."
 if [ -e $WORKING_DIR ]
 then
     rm -rf $WORKING_DIR
@@ -96,10 +96,10 @@ git --git-dir="$SOURCE_DIR/.git" checkout-index --all --force --prefix="$WORKING
 
 if [[ ! $ASSUME_YES = 1 ]]
 then
-    FOUND_VERSION=$(grep -Eo "define\('GLPI_VERSION', '[^']+'\);" $WORKING_DIR/glpi/inc/define.php | sed "s/define('GLPI_VERSION', '\([^)]*\)');/\1/")
+    FOUND_VERSION=$(grep -Eo "define\('GLPI_VERSION', '[^']+'\);" $WORKING_DIR/glpi/src/autoload/constants.php | sed "s/define('GLPI_VERSION', '\([^)]*\)');/\1/")
     if [[ ! "$RELEASE" = "$FOUND_VERSION" ]]
     then
-        read -p "$RELEASE does not match version $FOUND_VERSION declared in inc/define.php. Do you want to continue? [Y/n] " -n 1 -r
+        read -p "$RELEASE does not match version $FOUND_VERSION declared in src/autoload/constants.php. Do you want to continue? [Y/n] " -n 1 -r
         echo # (optional) move to a new line
         if [[ ! $REPLY =~ ^[Yy]$ ]]
         then
@@ -108,13 +108,13 @@ then
     fi
 fi
 
-echo "Building application"
+echo "Building application..."
 $WORKING_DIR/glpi/tools/build_glpi.sh
 
-echo "Creating tarball";
+echo "Creating tarball..."
 tar -c -z -f $TARBALL_PATH -C $WORKING_DIR glpi
 
-echo "Deleting temp directory"
+echo "Deleting temp directory..."
 rm -rf $WORKING_DIR
 
 echo "The Tarball path is $TARBALL_PATH"

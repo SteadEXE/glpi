@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -38,8 +38,12 @@
  **/
 class PDU extends CommonDBTM
 {
+    use Glpi\Features\AssignableItem {
+        prepareInputForAdd as prepareInputForAddAssignableItem;
+    }
     use Glpi\Features\DCBreadcrumb;
     use Glpi\Features\Clonable;
+    use Glpi\Features\State;
 
    // From CommonDBTM
     public $dohistory                   = true;
@@ -48,7 +52,7 @@ class PDU extends CommonDBTM
     public function getCloneRelations(): array
     {
         return [
-            Pdu_Plug::class,
+            Item_Plug::class,
             Item_Devices::class,
             NetworkPort::class
         ];
@@ -59,18 +63,23 @@ class PDU extends CommonDBTM
         return _n('PDU', 'PDUs', $nb);
     }
 
+    public static function getSectorizedDetails(): array
+    {
+        return ['assets', self::class];
+    }
+
     public function defineTabs($options = [])
     {
         $ong = [];
         $this->addDefaultFormTab($ong)
          ->addImpactTab($ong, $options)
-         ->addStandardTab('Pdu_Plug', $ong, $options)
+         ->addStandardTab('Item_Plug', $ong, $options)
          ->addStandardTab('Item_Devices', $ong, $options)
          ->addStandardTab('NetworkPort', $ong, $options)
          ->addStandardTab('Infocom', $ong, $options)
          ->addStandardTab('Contract_Item', $ong, $options)
          ->addStandardTab('Document_Item', $ong, $options)
-         ->addStandardTab('Ticket', $ong, $options)
+         ->addStandardTab('Item_Ticket', $ong, $options)
          ->addStandardTab('Item_Problem', $ong, $options)
          ->addStandardTab('Change_Item', $ong, $options)
          ->addStandardTab('Log', $ong, $options);
@@ -119,6 +128,43 @@ class PDU extends CommonDBTM
         $tab = array_merge($tab, Location::rawSearchOptionsToAdd());
 
         $tab[] = [
+            'id'                 => '16',
+            'table'              => $this->getTable(),
+            'field'              => 'comment',
+            'name'               => __('Comments'),
+            'datatype'           => 'text'
+        ];
+
+        $tab[] = [
+            'id'                 => '70',
+            'table'              => 'glpi_users',
+            'field'              => 'name',
+            'name'               => User::getTypeName(1),
+            'datatype'           => 'dropdown',
+            'right'              => 'all'
+        ];
+
+        $tab[] = [
+            'id'                 => '71',
+            'table'              => 'glpi_groups',
+            'field'              => 'completename',
+            'name'               => Group::getTypeName(1),
+            'condition'          => ['is_itemgroup' => 1],
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_groups_items',
+                    'joinparams'         => [
+                        'jointype'           => 'itemtype_item',
+                        'condition'          => ['NEWTABLE.type' => Group_Item::GROUP_TYPE_NORMAL]
+                    ]
+                ]
+            ],
+            'forcegroupby'       => true,
+            'massiveaction'      => false,
+            'datatype'           => 'dropdown'
+        ];
+
+        $tab[] = [
             'id'                 => '19',
             'table'              => $this->getTable(),
             'field'              => 'date_mod',
@@ -137,11 +183,11 @@ class PDU extends CommonDBTM
 
         $tab[] = [
             'id'                 => '31',
-            'table'              => 'glpi_states',
+            'table'              => State::getTable(),
             'field'              => 'completename',
             'name'               => __('Status'),
             'datatype'           => 'dropdown',
-            'condition'          => ['is_visible_pdu' => 1]
+            'condition'          => $this->getStateVisibilityCriteria()
         ];
 
         $tab[] = [
@@ -149,7 +195,7 @@ class PDU extends CommonDBTM
             'table'              => 'glpi_users',
             'field'              => 'name',
             'linkfield'          => 'users_id_tech',
-            'name'               => __('Technician in charge of the hardware'),
+            'name'               => __('Technician in charge'),
             'datatype'           => 'dropdown',
             'right'              => 'own_ticket'
         ];
@@ -166,9 +212,20 @@ class PDU extends CommonDBTM
             'id'                 => '49',
             'table'              => 'glpi_groups',
             'field'              => 'completename',
-            'linkfield'          => 'groups_id_tech',
-            'name'               => __('Group in charge of the hardware'),
+            'linkfield'          => 'groups_id',
+            'name'               => __('Group in charge'),
             'condition'          => ['is_assign' => 1],
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_groups_items',
+                    'joinparams'         => [
+                        'jointype'           => 'itemtype_item',
+                        'condition'          => ['NEWTABLE.type' => Group_Item::GROUP_TYPE_TECH]
+                    ]
+                ]
+            ],
+            'forcegroupby'       => true,
+            'massiveaction'      => false,
             'datatype'           => 'dropdown'
         ];
 
@@ -204,6 +261,10 @@ class PDU extends CommonDBTM
 
         $tab = array_merge($tab, Rack::rawSearchOptionsToAdd(get_class($this)));
 
+        $tab = array_merge($tab, PDUModel::rawSearchOptionsToAdd());
+
+        $tab = array_merge($tab, DCRoom::rawSearchOptionsToAdd());
+
         return $tab;
     }
 
@@ -212,7 +273,7 @@ class PDU extends CommonDBTM
 
         $this->deleteChildrenAndRelationsFromDb(
             [
-                Pdu_Plug::class,
+                Item_Plug::class,
                 PDU_Rack::class,
             ]
         );
@@ -231,6 +292,9 @@ class PDU extends CommonDBTM
         }
         unset($input['id']);
         unset($input['withtemplate']);
+
+        $input = $this->prepareInputForAddAssignableItem($input);
+
         return $input;
     }
 }

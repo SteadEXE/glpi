@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,19 +33,15 @@
  * ---------------------------------------------------------------------
  */
 
-use Glpi\Toolbox\Sanitizer;
+/** @var \Glpi\Controller\LegacyFileLoadController $this */
+$this->setAjax();
 
-$AJAX_INCLUDE = 1;
-
-include('../inc/includes.php');
 header("Content-Type: text/html; charset=UTF-8");
 Html::header_nocache();
-
-Session::checkLoginUser();
 
 if (isset($_POST['name'])) {
     echo "<textarea " . (isset($_POST['rows']) ? " rows='" . $_POST['rows'] . "' " : "") . " " .
          (isset($_POST['cols']) ? " cols='" . $_POST['cols'] . "' " : "") . "  name='" . $_POST['name'] . "'>";
-    echo Html::cleanPostForTextArea(Sanitizer::encodeHtmlSpecialChars(rawurldecode(($_POST["data"]))));
+    echo htmlescape(rawurldecode(($_POST["data"])));
     echo "</textarea>";
 }

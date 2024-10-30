@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -37,14 +37,9 @@ $ajax = false;
 // Direct access to file
 if (strpos($_SERVER['PHP_SELF'], "searchoptionvalue.php")) {
     $ajax = true;
-    include('../inc/includes.php');
     header("Content-Type: text/html; charset=UTF-8");
     Html::header_nocache();
-} else if (!defined('GLPI_ROOT')) {
-    die("Sorry. You can't access this file directly");
 }
-
-Session::checkLoginUser();
 
 if (isset($_POST['searchtype'])) {
     $searchopt      = $_POST['searchopt'];
@@ -72,7 +67,7 @@ if (isset($_POST['searchtype'])) {
         case "lessthan":
         case "under":
         case "notunder":
-            if (!$display && isset($searchopt['field'])) {
+            if (isset($searchopt['field'])) {
                 // Specific cases
                 switch ($searchopt['table'] . "." . $searchopt['field']) {
                    // Add mygroups choice to searchopt
@@ -126,7 +121,7 @@ if (isset($_POST['searchtype'])) {
                 }
 
                 // Standard datatype usage
-                if (!$display && isset($searchopt['datatype'])) {
+                if (isset($searchopt['datatype'])) {
                     switch ($searchopt['datatype']) {
                         case "date":
                         case "date_delay":
@@ -165,6 +160,6 @@ if (isset($_POST['searchtype'])) {
    // Default case : text field
     if (!$display) {
         echo "<input type='text' size='13' name='$inputname' value=\"" .
-               Html::cleanInputText($_POST['value']) . "\">";
+               htmlescape($_POST['value']) . "\">";
     }
 }

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -47,21 +47,33 @@ class OLA extends LevelAgreement
 
     public static function getTypeName($nb = 0)
     {
-       // Acronymous, no plural
+        // Acronym, no plural
         return __('OLA');
+    }
+
+    public static function getSectorizedDetails(): array
+    {
+        return ['config', SLM::class, self::class];
+    }
+
+    public static function getIcon()
+    {
+        return SLM::getIcon();
     }
 
     public function showFormWarning()
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         echo "<img src='" . $CFG_GLPI["root_doc"] . "/pics/warning.png' alt='" . __s('Warning') . "'>";
-        echo __('The internal time is recalculated when assigning the OLA');
+        echo __s('The internal time is recalculated when assigning the OLA');
     }
 
-    public function getAddConfirmation()
+    public function getAddConfirmation(): array
     {
-        return [__("The assignment of an OLA to a ticket causes the recalculation of the date."),
+        return [
+            __("The assignment of an OLA to a ticket causes the recalculation of the date."),
             __("Escalations defined in the OLA will be triggered under this new date.")
         ];
     }

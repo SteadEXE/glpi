@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,8 +34,7 @@
  */
 
 use Glpi\Event;
-
-include('../inc/includes.php');
+use Glpi\Exception\Http\BadRequestHttpException;
 
 Session::checkRight("software", UPDATE);
 $isl = new Item_SoftwareLicense();
@@ -46,7 +45,7 @@ if (isset($_POST["add"])) {
             __('Mandatory fields are not filled. Please correct: %s'),
             _n('Item', 'Items', 1)
         );
-        Session::addMessageAfterRedirect($message, false, ERROR);
+        Session::addMessageAfterRedirect(htmlescape($message), false, ERROR);
         Html::back();
     }
     if ($_POST['softwarelicenses_id'] > 0) {
@@ -63,4 +62,5 @@ if (isset($_POST["add"])) {
     }
     Html::back();
 }
-Html::displayErrorAndDie('Lost');
+
+throw new BadRequestHttpException();

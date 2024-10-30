@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,7 +34,6 @@
  */
 
 use Glpi\Plugin\Hooks;
-use Glpi\Toolbox\Sanitizer;
 
 /**
  *  GLPI security key
@@ -61,8 +60,11 @@ class GLPIKey
      * @var array
      */
     protected $fields = [
+        'glpi_authldaps.rootdn_passwd',
         'glpi_mailcollectors.passwd',
-        'glpi_authldaps.rootdn_passwd'
+        'glpi_oauthclients.secret',
+        'glpi_snmpcredentials.auth_passphrase',
+        'glpi_snmpcredentials.priv_passphrase',
     ];
 
     /**
@@ -76,6 +78,8 @@ class GLPIKey
             'glpinetwork_registration_key',
             'proxy_passwd',
             'smtp_passwd',
+            'smtp_oauth_client_secret',
+            'smtp_oauth_refresh_token',
         ]
     ];
 
@@ -122,7 +126,7 @@ class GLPIKey
     public function get(): ?string
     {
         if (!file_exists($this->keyfile)) {
-            trigger_error('You must create a security key, see glpi:security:change_key command.', E_USER_WARNING);
+            trigger_error('You must create a security key, see security:change_key command.', E_USER_WARNING);
             return null;
         }
         if (!is_readable($this->keyfile) || ($key = file_get_contents($this->keyfile)) === false) {
@@ -163,6 +167,7 @@ class GLPIKey
      */
     public function generate(): bool
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
        // Check ability to create/update key file.
@@ -211,6 +216,7 @@ class GLPIKey
      */
     public function getFields(): array
     {
+        /** @var array $PLUGIN_HOOKS */
         global $PLUGIN_HOOKS;
 
         $fields = $this->fields;
@@ -230,6 +236,7 @@ class GLPIKey
      */
     public function getConfigs(): array
     {
+        /** @var array $PLUGIN_HOOKS */
         global $PLUGIN_HOOKS;
 
         $configs = $this->configs;
@@ -269,6 +276,7 @@ class GLPIKey
      */
     protected function migrateFieldsInDb(?string $sodium_key): bool
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $success = true;
@@ -313,6 +321,7 @@ class GLPIKey
      */
     protected function migrateConfigsInDb($sodium_key): bool
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $success = true;
@@ -382,10 +391,11 @@ class GLPIKey
     /**
      * Descrypt a string.
      *
-     * @param string|null   $string  String to decrypt.
-     * @param string|null   $key     Key to use, fallback to default key if null.
+     * @param string|null $string String to decrypt.
+     * @param string|null $key Key to use, fallback to default key if null.
      *
      * @return string|null
+     * @throws SodiumException
      */
     public function decrypt(?string $string, $key = null): ?string
     {
@@ -463,6 +473,9 @@ class GLPIKey
             $result .= $char;
         }
 
-        return Sanitizer::unsanitize($result);
+        // In legacy password encrytion logic, an HTML encoded value of password was sometimes stored
+        $result = str_replace(['<', '>'], ['&lt;', '&gt;'], $result);
+
+        return $result;
     }
 }

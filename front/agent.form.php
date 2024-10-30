@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -35,9 +35,7 @@
 
 use Glpi\Event;
 
-include('../inc/includes.php');
-
-Session::checkRight("config", READ);
+Session::checkRight("agent", READ);
 
 if (!isset($_GET["id"])) {
     $_GET["id"] = "";
@@ -104,7 +102,7 @@ if (isset($_POST["delete"])) {
     );
     Html::back();
 } else {//print agent information
-    $menus = ["admin", "glpi\inventory\inventory", "agent"];
+    $menus = ["admin", "glpi\inventory\inventory", "Agent"];
     Agent::displayFullPageForItem((int) $_GET['id'], $menus, [
         'withtemplate' => $_GET["withtemplate"],
         'formoptions'  => "data-track-changes=true",

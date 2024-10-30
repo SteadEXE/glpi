@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -42,10 +42,8 @@ class DeviceFirmware extends CommonDevice
         return _n('Firmware', 'Firmware', $nb);
     }
 
-
     public function getAdditionalFields()
     {
-
         return array_merge(
             parent::getAdditionalFields(),
             [
@@ -73,14 +71,13 @@ class DeviceFirmware extends CommonDevice
         );
     }
 
-
     public function rawSearchOptions()
     {
         $tab = parent::rawSearchOptions();
 
         $tab[] = [
             'id'                 => '11',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'date',
             'name'               => __('Release date'),
             'datatype'           => 'date'
@@ -112,13 +109,141 @@ class DeviceFirmware extends CommonDevice
         return $tab;
     }
 
+    public static function rawSearchOptionsToAdd($itemtype, $main_joinparams)
+    {
+        $tab = [];
+
+        //SO defined from glpi_devicefirmwares table
+        $tab[] = [
+            'id'                 => '1313',
+            'table'              => 'glpi_devicefirmwares',
+            'field'              => 'designation',
+            'name'               => self::getTypeName(1),
+            'forcegroupby'       => true,
+            'usehaving'          => true,
+            'massiveaction'      => false,
+            'datatype'           => 'string',
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_items_devicefirmwares',
+                    'joinparams'         => $main_joinparams
+                ]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '1314',
+            'table'              => 'glpi_devicefirmwares',
+            'field'              => 'version',
+            'name'               => sprintf(__('%1$s: %2$s'), self::getTypeName(1), _n('Version', 'Versions', 1)),
+            'forcegroupby'       => true,
+            'usehaving'          => true,
+            'massiveaction'      => false,
+            'datatype'           => 'string',
+            'joinparams'         => [
+                'beforejoin'         => [
+                    'table'              => 'glpi_items_devicefirmwares',
+                    'joinparams'         => $main_joinparams
+                ]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '1315',
+            'table'              => 'glpi_devicefirmwaretypes',
+            'field'              => 'name',
+            'name'               => sprintf(__('%1$s: %2$s'), self::getTypeName(1), _n('Type', 'Types', 1)),
+            'massiveaction'      => false,
+            'datatype'           => 'dropdown',
+            'joinparams'         => [
+                'beforejoin' => [
+                    'table'      => self::getTable(),
+                    'joinparams' => [
+                        'beforejoin' => [
+                            'table'      => Item_DeviceFirmware::getTable(),
+                            'joinparams' => ['jointype' => 'itemtype_item']
+                        ]
+                    ]
+                ]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '1316',
+            'table'              => 'glpi_devicefirmwaremodels',
+            'field'              => 'name',
+            'name'               => sprintf(__('%1$s: %2$s'), self::getTypeName(1), _n('Model', 'Models', 1)),
+            'massiveaction'      => false,
+            'datatype'           => 'dropdown',
+            'joinparams'         => [
+                'beforejoin' => [
+                    'table'      => self::getTable(),
+                    'joinparams' => [
+                        'beforejoin' => [
+                            'table'      => Item_DeviceFirmware::getTable(),
+                            'joinparams' => ['jointype' => 'itemtype_item']
+                        ]
+                    ]
+                ]
+            ]
+        ];
+
+        $tab[] = [
+            'id'                 => '1317',
+            'table'              => 'glpi_manufacturers',
+            'field'              => 'name',
+            'name'               => sprintf(__('%1$s: %2$s'), self::getTypeName(1), Manufacturer::getTypeName(1)),
+            'massiveaction'      => false,
+            'datatype'           => 'dropdown',
+            'joinparams'         => [
+                'beforejoin' => [
+                    'table'      => self::getTable(),
+                    'joinparams' => [
+                        'beforejoin' => [
+                            'table'      => Item_DeviceFirmware::getTable(),
+                            'joinparams' => ['jointype' => 'itemtype_item']
+                        ]
+                    ]
+                ]
+            ]
+        ];
+
+        //SO defined from relation (glpi_items_devicefirmwares) table
+        $tab[] = [
+            'id'                 => '1318',
+            'table'              => 'glpi_items_devicefirmwares',
+            'field'              => 'serial',
+            'name'               => sprintf(__('%1$s: %2$s'), self::getTypeName(1), __('Serial Number')),
+            'forcegroupby'       => true,
+            'usehaving'          => true,
+            'datatype'           => 'string',
+            'massiveaction'      => false,
+            'joinparams'         => $main_joinparams,
+        ];
+
+        $tab[] = [
+            'id'                 => '1319',
+            'table'              => 'glpi_items_devicefirmwares',
+            'field'              => 'otherserial',
+            'name'               => sprintf(__('%1$s: %2$s'), self::getTypeName(1), __('Inventory number')),
+            'forcegroupby'       => true,
+            'usehaving'          => true,
+            'datatype'           => 'string',
+            'massiveaction'      => false,
+            'joinparams'         => $main_joinparams,
+        ];
+
+        return $tab;
+    }
+
     public static function getHTMLTableHeader(
         $itemtype,
         HTMLTableBase $base,
-        HTMLTableSuperHeader $super = null,
-        HTMLTableHeader $father = null,
+        ?HTMLTableSuperHeader $super = null,
+        ?HTMLTableHeader $father = null,
         array $options = []
     ) {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
         $column = parent::getHTMLTableHeader($itemtype, $base, $super, $father, $options);
 
@@ -135,11 +260,12 @@ class DeviceFirmware extends CommonDevice
     }
 
     public function getHTMLTableCellForItem(
-        HTMLTableRow $row = null,
-        CommonDBTM $item = null,
-        HTMLTableCell $father = null,
+        ?HTMLTableRow $row = null,
+        ?CommonDBTM $item = null,
+        ?HTMLTableCell $father = null,
         array $options = []
     ) {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
         $column = parent::getHTMLTableCellForItem($row, $item, $father, $options);
 
@@ -147,7 +273,7 @@ class DeviceFirmware extends CommonDevice
             return $father;
         }
 
-        if (in_array($item->getType(), $CFG_GLPI['itemdevicefirmware_types'])) {
+        if (in_array($item::class, $CFG_GLPI['itemdevicefirmware_types'], true)) {
             Manufacturer::getHTMLTableCellsForItem($row, $this, null, $options);
 
             if ($this->fields["devicefirmwaretypes_id"]) {
@@ -174,11 +300,11 @@ class DeviceFirmware extends CommonDevice
                 );
             }
         }
+        return null;
     }
 
     public function getImportCriteria()
     {
-
         return [
             'designation'              => 'equal',
             'devicefirmwaretypes_id'   => 'equal',
@@ -186,7 +312,6 @@ class DeviceFirmware extends CommonDevice
             'version'                  => 'equal'
         ];
     }
-
 
     public static function getIcon()
     {

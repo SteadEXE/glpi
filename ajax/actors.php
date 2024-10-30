@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,16 +33,14 @@
  * ---------------------------------------------------------------------
  */
 
-$AJAX_INCLUDE = 1;
-include('../inc/includes.php');
-
-Session::checkLoginUser();
+/** @var \Glpi\Controller\LegacyFileLoadController $this */
+$this->setAjax();
 
 switch ($_REQUEST['action']) {
     case "getActors":
         header("Content-Type: application/json; charset=UTF-8");
         Html::header_nocache();
-        session_write_close(); // don'l lock session to permits parallel calls
+        Session::writeClose();
         echo Dropdown::getDropdownActors($_POST);
         break;
 }

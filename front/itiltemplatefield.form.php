@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,16 +34,21 @@
  */
 
 use Glpi\Event;
+use Glpi\Exception\Http\BadRequestHttpException;
 
-include '../inc/includes.php';
-Session ::checkRight('itiltemplate', UPDATE);
+Session::checkRight('itiltemplate', UPDATE);
+
+/**
+ * @var string|null $itiltype
+ * @var string|null $fieldtype
+ */
 
 if (!isset($itiltype)) {
-    Html::displayErrorAndDie("Missing ITIL type");
+    throw new BadRequestHttpException();
 }
 
 if (!isset($fieldtype)) {
-    Html::displayErrorAndDie("Missing field type");
+    throw new BadRequestHttpException();
 }
 
 $item_class = $itiltype . 'Template' . $fieldtype . 'Field';
@@ -61,6 +66,7 @@ if (isset($_POST["add"]) || isset($_POST['massiveaction'])) {
     $item->check(-1, UPDATE, $_POST);
 
     if ($item->add($_POST)) {
+        $fieldtype_name = '';
         switch ($fieldtype) {
             case 'Hidden':
                 $fieldtype_name = __('hidden');
@@ -70,6 +76,9 @@ if (isset($_POST["add"]) || isset($_POST['massiveaction'])) {
                 break;
             case 'Predefined':
                 $fieldtype_name = __('predefined');
+                break;
+            case 'Readonly':
+                $fieldtype_name = __('readonly');
                 break;
         }
 
@@ -89,4 +98,4 @@ if (isset($_POST["add"]) || isset($_POST['massiveaction'])) {
     Html::back();
 }
 
-Html::displayErrorAndDie("lost");
+throw new BadRequestHttpException();

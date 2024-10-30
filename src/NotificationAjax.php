@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,7 +33,8 @@
  * ---------------------------------------------------------------------
  */
 
-use Glpi\Toolbox\Sanitizer;
+use Glpi\DBAL\QueryExpression;
+use Glpi\DBAL\QueryFunction;
 
 /**
  *  NotificationAjax
@@ -44,7 +45,7 @@ class NotificationAjax implements NotificationInterface
      * Check data
      *
      * @param mixed $value   The data to check (may differ for every notification mode)
-     * @param array $options Optionnal special options (may be needed)
+     * @param array $options Optional special options (may be needed)
      *
      * @return boolean
      **/
@@ -66,7 +67,8 @@ class NotificationAjax implements NotificationInterface
             'fromname'                    => 'TEST',
             'subject'                     => 'Test notification',
             'content_text'                => "Hello, this is a test notification.",
-            'to'                          => Session::getLoginUserID()
+            'to'                          => Session::getLoginUserID(),
+            'event'                       => 'test_notification'
         ]);
     }
 
@@ -86,12 +88,14 @@ class NotificationAjax implements NotificationInterface
         $data['body_text']                            = $options['content_text'];
         $data['recipient']                            = $options['to'];
 
+        $data['event'] = $options['event'] ?? null; // `event` has been added in GLPI 10.0.7
+
         $data['mode'] = Notification_NotificationTemplate::MODE_AJAX;
 
         $queue = new QueuedNotification();
 
-        if (!$queue->add(Sanitizer::sanitize($data))) {
-            Session::addMessageAfterRedirect(__('Error inserting browser notification to queue'), true, ERROR);
+        if (!$queue->add($data)) {
+            Session::addMessageAfterRedirect(__s('Error inserting browser notification to queue'), true, ERROR);
             return false;
         } else {
            //TRANS to be written in logs %1$s is the to email / %2$s is the subject of the mail
@@ -118,28 +122,34 @@ class NotificationAjax implements NotificationInterface
      */
     public static function getMyNotifications()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $return = [];
         if ($CFG_GLPI['notifications_ajax']) {
+            $secs = $CFG_GLPI["notifications_ajax_expiration_delay"] * DAY_TIMESTAMP;
             $iterator = $DB->request([
                 'FROM'   => 'glpi_queuednotifications',
                 'WHERE'  => [
                     'is_deleted'   => false,
                     'recipient'    => Session::getLoginUserID(),
-                    'mode'         => Notification_NotificationTemplate::MODE_AJAX
+                    'mode'         => Notification_NotificationTemplate::MODE_AJAX,
+                    new QueryExpression(
+                        QueryFunction::unixTimestamp('send_time') . ' + ' . $secs .
+                            ' > ' . QueryFunction::unixTimestamp()
+                    )
                 ]
             ]);
 
             if ($iterator->numrows()) {
                 foreach ($iterator as $row) {
                     $url = null;
-                    if (
-                        $row['itemtype'] != 'NotificationAjax' &&
-                        method_exists($row['itemtype'], 'getFormURL')
-                    ) {
+                    if (is_a($row['itemtype'], CommonGLPI::class, true)) {
                         $item = new $row['itemtype']();
-                        $url = $item->getFormURL(false) . "?id={$row['items_id']}";
+                        $url = $item->getFormURLWithID($row['items_id'], true);
                     }
 
                     $return[] = [
@@ -168,6 +178,7 @@ class NotificationAjax implements NotificationInterface
      */
     public static function raisedNotification($id)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $now = date('Y-m-d H:i:s');

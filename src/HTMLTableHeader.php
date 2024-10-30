@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -44,14 +44,12 @@ abstract class HTMLTableHeader extends HTMLTableEntity
     private $colSpan     = 1;
     private $numberCells = 0;
 
-
     /**
      * get the table of the header (for a subheader, it is the table of its super header)
      *
      * @return HTMLTableMain the table owning the current header
      **/
     abstract protected function getTable();
-
 
     /**
      * get its name and subname : usefull for instance to create an index for arrays
@@ -63,30 +61,12 @@ abstract class HTMLTableHeader extends HTMLTableEntity
      **/
     abstract public function getHeaderAndSubHeaderName(&$header_name, &$subheader_name);
 
-
     /**
      * check to see if it is a super header or not
      *
-     * @return true if this is a super header
+     * @return boolean
      **/
     abstract public function isSuperHeader();
-
-
-    /**
-     * @param string          $name     the name of the header
-     * @param string          $content  see HTMLTableEntity#__construct()
-     * @param HTMLTableHeader $father   HTMLTableHeader object:
-     *                                  the father of the current column (default NULL)
-     **/
-    public function __construct($name, $content, HTMLTableHeader $father = null)
-    {
-
-        parent::__construct($content);
-
-        $this->name           = $name;
-        $this->father         = $father;
-    }
-
 
     /**
      * @param $itemtype
@@ -97,13 +77,25 @@ abstract class HTMLTableHeader extends HTMLTableEntity
         $this->itemtypes[$itemtype] = $title;
     }
 
+    /**
+     * @param string               $name    the name of the header
+     * @param string               $content see HTMLTableEntity#__construct()
+     * @param HTMLTableHeader|null $father  father of the current column (default NULL)
+     */
+    public function __construct($name, $content, ?HTMLTableHeader $father = null)
+    {
+        parent::__construct($content);
+
+        $this->name           = $name;
+        $this->father         = $father;
+    }
 
     /**
-     * @param $item      CommonDBTM object (default NULL)
-     **/
-    public function checkItemType(CommonDBTM $item = null)
+     * @param ?CommonDBTM $item
+     * @throws Exception
+     */
+    public function checkItemType(?CommonDBTM $item = null)
     {
-
         if (($item === null) && (count($this->itemtypes) > 0)) {
             throw new \Exception('Implementation error: header requires an item');
         }
@@ -115,47 +107,40 @@ abstract class HTMLTableHeader extends HTMLTableEntity
         }
     }
 
-
     public function getName()
     {
         return $this->name;
     }
 
-
     /**
-     * @param $colSpan
+     * @param integer $colSpan
      **/
     public function setColSpan($colSpan)
     {
         $this->colSpan = $colSpan;
     }
 
-
     public function addCell()
     {
         $this->numberCells++;
     }
-
 
     public function hasToDisplay()
     {
         return ($this->numberCells > 0);
     }
 
-
     public function getColSpan()
     {
         return $this->colSpan;
     }
 
-
     /**
-     * @param boolean $with_content do we displaye the content ?
+     * @param boolean $with_content do we display the content ?
      * @param boolean $main_header  main header (from table) or secondary (from group) ? (true by default)
      **/
     public function displayTableHeader($with_content, $main_header = true)
     {
-
         if ($main_header) {
             echo "<th";
         } else {
@@ -173,7 +158,6 @@ abstract class HTMLTableHeader extends HTMLTableEntity
             echo "</td>";
         }
     }
-
 
     public function getFather()
     {

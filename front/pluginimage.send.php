@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -43,8 +43,10 @@
  */
 
 use Glpi\Event;
+use Glpi\Exception\Http\AccessDeniedHttpException;
 
-include('../inc/includes.php');
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
 
 if (!isset($_GET["name"]) || !isset($_GET["plugin"]) || !Plugin::isPluginActive($_GET["plugin"])) {
     Event::log(
@@ -55,10 +57,13 @@ if (!isset($_GET["name"]) || !isset($_GET["plugin"]) || !Plugin::isPluginActive(
         //TRANS: %s is user name
         sprintf(__('%s makes a bad usage.'), $_SESSION["glpiname"])
     );
-    die("security");
+    throw new AccessDeniedHttpException();
 }
 
 $dir = GLPI_PLUGIN_DOC_DIR . "/" . $_GET["plugin"] . "/";
+if (isset($_GET["folder"])) {
+    $dir .= $_GET["folder"] . "/";
+}
 $filepath = $dir . $_GET["name"];
 
 if (
@@ -74,7 +79,7 @@ if (
         "security",
         sprintf(__('%s tries to use a non standard path.'), $_SESSION["glpiname"])
     );
-    die("security");
+    throw new AccessDeniedHttpException();
 }
 
 // Now send the file with header() magic

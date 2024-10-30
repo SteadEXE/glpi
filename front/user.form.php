@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,8 +34,17 @@
  */
 
 use Glpi\Event;
+use Glpi\Exception\Http\NotFoundHttpException;
 
-include('../inc/includes.php');
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
+
+if (isset($_POST['language']) && !Session::getLoginUserID()) {
+    // Offline lang change, keep it before session validity check
+    $_SESSION["glpilanguage"] = $_POST['language'];
+    Session::addMessageAfterRedirect(__s('Lang has been changed!'));
+    Html::back();
+}
 
 if (empty($_GET["id"])) {
     $_GET["id"] = "";
@@ -45,8 +54,12 @@ $user      = new User();
 $groupuser = new Group_User();
 
 if (empty($_GET["id"]) && isset($_GET["name"])) {
-    $user->getFromDBbyName($_GET["name"]);
-    Html::redirect($user->getFormURLWithID($user->fields['id']));
+    Session::checkRight(User::$rightname, READ);
+    if ($user->getFromDBbyName($_GET["name"])) {
+        $user->check($user->fields['id'], READ);
+        Html::redirect($user->getFormURLWithID($user->fields['id']));
+    }
+    throw new NotFoundHttpException();
 }
 
 if (empty($_GET["name"])) {
@@ -134,36 +147,6 @@ if (isset($_GET['getvcard'])) {
         sprintf(__('%s updates an item'), $_SESSION["glpiname"])
     );
     Html::back();
-} else if (isset($_POST["addgroup"])) {
-    $groupuser->check(-1, CREATE, $_POST);
-    if ($groupuser->add($_POST)) {
-        Event::log(
-            $_POST["users_id"],
-            "users",
-            4,
-            "setup",
-            //TRANS: %s is the user login
-            sprintf(__('%s adds a user to a group'), $_SESSION["glpiname"])
-        );
-    }
-    Html::back();
-} else if (isset($_POST["deletegroup"])) {
-    if (count($_POST["item"])) {
-        foreach (array_keys($_POST["item"]) as $key) {
-            if ($groupuser->can($key, DELETE)) {
-                $groupuser->delete(['id' => $key]);
-            }
-        }
-    }
-    Event::log(
-        $_POST["users_id"],
-        "users",
-        4,
-        "setup",
-        //TRANS: %s is the user login
-        sprintf(__('%s deletes users from a group'), $_SESSION["glpiname"])
-    );
-    Html::back();
 } else if (isset($_POST["change_auth_method"])) {
     Session::checkRight('user', User::UPDATEAUTHENT);
 
@@ -171,22 +154,18 @@ if (isset($_GET['getvcard'])) {
         User::changeAuthMethod([$_POST["id"]], $_POST["authtype"], $_POST["auths_id"]);
     }
     Html::back();
-} else if (isset($_POST['language']) && !GLPI_DEMO_MODE) {
-    if (Session::getLoginUserID()) {
-        $user->update(
-            [
-                'id'        => Session::getLoginUserID(),
-                'language'  => $_POST['language']
-            ]
-        );
-    } else {
-        $_SESSION["glpilanguage"] = $_POST['language'];
-    }
-    Session::addMessageAfterRedirect(__('Lang has been changed!'));
+} else if (isset($_POST['language'])) {
+    $user->update(
+        [
+            'id'        => Session::getLoginUserID(),
+            'language'  => $_POST['language']
+        ]
+    );
+    Session::addMessageAfterRedirect(__s('Lang has been changed!'));
     Html::back();
 } else if (isset($_POST['impersonate']) && $_POST['impersonate']) {
     if (!Session::startImpersonating($_POST['id'])) {
-        Session::addMessageAfterRedirect(__('Unable to impersonate user'), false, ERROR);
+        Session::addMessageAfterRedirect(__s('Unable to impersonate user'), false, ERROR);
         Html::back();
     }
 
@@ -195,11 +174,15 @@ if (isset($_GET['getvcard'])) {
     $impersonated_user_id = Session::getLoginUserID();
 
     if (!Session::stopImpersonating()) {
-        Session::addMessageAfterRedirect(__('Unable to stop impersonating user'), false, ERROR);
+        Session::addMessageAfterRedirect(__s('Unable to stop impersonating user'), false, ERROR);
         Html::back();
     }
 
     Html::redirect(User::getFormURLWithID($impersonated_user_id));
+} else if (isset($_POST['disable_2fa'])) {
+    Session::checkRight('user', User::UPDATEAUTHENT);
+    (new \Glpi\Security\TOTPManager())->disable2FAForUser($_POST['id']);
+    Html::back();
 } else {
     if (isset($_GET["ext_auth"])) {
         Html::header(User::getTypeName(Session::getPluralNumber()), '', "admin", "user");
@@ -236,9 +219,9 @@ if (isset($_GET['getvcard'])) {
 
          Html::back();
     } else {
+        $options = $_GET;
+        $options['formoptions'] = "data-track-changes=true";
         $menus = ["admin", "user"];
-        User::displayFullPageForItem($_GET["id"], $menus, [
-            'formoptions'  => "data-track-changes=true"
-        ]);
+        User::displayFullPageForItem($_GET["id"], $menus, $options);
     }
 }

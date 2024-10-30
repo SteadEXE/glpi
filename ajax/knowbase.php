@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,17 +33,23 @@
  * ---------------------------------------------------------------------
  */
 
-include('../inc/includes.php');
+/**
+ * @var array $CFG_GLPI
+ */
+global $CFG_GLPI;
+
 Html::header_nocache();
 
-/** @global array $CFG_GLPI */
+Toolbox::deprecated();
 
 if (
     !$CFG_GLPI["use_public_faq"]
     && !Session::haveRightsOr('knowbase', [KnowbaseItem::READFAQ, READ])
 ) {
-    exit;
+    return;
 }
+
+$_SESSION['kb_cat_id'] = $_REQUEST['cat_id'] ?? 0;
 
 switch ($_REQUEST['action']) {
     case "getItemslist":

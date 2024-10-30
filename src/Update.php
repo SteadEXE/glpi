@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,6 +33,9 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Helpdesk\DefaultDataManager;
+use Glpi\Form\Form;
+use Glpi\Rules\RulesManager;
 use Glpi\System\Diagnostic\DatabaseSchemaIntegrityChecker;
 use Glpi\Toolbox\VersionParser;
 
@@ -52,15 +55,24 @@ class Update
     private $language;
 
     /**
+     * Directory containing migrations.
+     *
+     * @var string
+     */
+    private $migrations_directory;
+
+    /**
      * Constructor
      *
      * @param object $DB   Database instance
      * @param array  $args Command line arguments; default to empty array
+     * @param string $migrations_directory
      */
-    public function __construct($DB, $args = [])
+    public function __construct($DB, $args = [], string $migrations_directory = GLPI_ROOT . '/install/migrations/')
     {
         $this->DB = $DB;
         $this->args = $args;
+        $this->migrations_directory = $migrations_directory;
     }
 
     /**
@@ -70,7 +82,7 @@ class Update
      */
     public function initSession()
     {
-        if (is_writable(GLPI_SESSION_DIR)) {
+        if (Session::canWriteSessionFiles()) {
             Session::setPath();
         } else {
             if (isCommandLine()) {
@@ -84,10 +96,6 @@ class Update
             $_SESSION = ['glpilanguage' => (isset($this->args['lang']) ? $this->args['lang'] : 'en_GB')];
             $_SESSION["glpi_currenttime"] = date("Y-m-d H:i:s");
         }
-
-       // Init debug variable
-       // Only show errors
-        Toolbox::setDebugMode(Session::DEBUG_MODE, 0, 0, 1);
     }
 
     /**
@@ -161,27 +169,20 @@ class Update
     /**
      * Verify the database schema integrity.
      *
-     * @return void
+     * @return bool
      */
-    private function checkSchemaIntegrity(): void
+    final public function isUpdatedSchemaConsistent(): bool
     {
+        /** @var \DBmysql $DB */
         global $DB;
-
-        $normalized_nersion = VersionParser::getNormalizedVersion(GLPI_VERSION, false);
 
         $checker = new DatabaseSchemaIntegrityChecker($DB, false, true, true, true, true, true);
         $differences = $checker->checkCompleteSchema(
-            sprintf('%s/install/mysql/glpi-%s-empty.sql', GLPI_ROOT, $normalized_nersion),
+            sprintf('%s/install/mysql/glpi-empty.sql', GLPI_ROOT),
             true
         );
 
-        if (count($differences) > 0) {
-            $this->migration->displayError(
-                __('The database schema is not consistent with the current GLPI version.')
-                . "\n"
-                . __('It is recommended to run the "php bin/console glpi:database:check_schema_integrity" command to see the differences.')
-            );
-        }
+        return count($differences) === 0;
     }
 
     /**
@@ -201,9 +202,8 @@ class Update
             $current_version = $this->version;
         }
 
-        if (version_compare($current_version, '0.80', 'lt')) {
-            die('Upgrade is not supported before 0.80!');
-            die(1);
+        if (version_compare($current_version, '0.85.5', 'lt')) {
+            die('Upgrade from version < 0.85.5 is not supported!');
         }
 
         $DB = $this->DB;
@@ -216,7 +216,7 @@ class Update
             // e.g. with `NO_ZERO_DATE` flag `ALTER TABLE` operations fails when a row contains a `0000-00-00 00:00:00` datetime value.
             // Unitary removal of these flags is not pôssible as MySQL 8.0 triggers warning if
             // `STRICT_{ALL|TRANS}_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO` are not used all together.
-            $sql_mode = $DB->query(sprintf('SELECT @@sql_mode as %s', $DB->quoteName('sql_mode')))->fetch_assoc()['sql_mode'] ?? '';
+            $sql_mode = $DB->doQuery(sprintf('SELECT @@sql_mode as %s', $DB->quoteName('sql_mode')))->fetch_assoc()['sql_mode'] ?? '';
             $sql_mode_flags = array_filter(
                 explode(',', $sql_mode),
                 function (string $flag) {
@@ -232,7 +232,7 @@ class Update
                     );
                 }
             );
-            $DB->query(sprintf('SET SESSION sql_mode = %s', $DB->quote(implode(',', $sql_mode_flags))));
+            $DB->doQuery(sprintf('SET SESSION sql_mode = %s', $DB->quote(implode(',', $sql_mode_flags))));
         }
 
        // To prevent problem of execution time
@@ -242,7 +242,7 @@ class Update
         $plugin = new Plugin();
         $plugin->unactivateAll();
 
-        if (version_compare($current_version, '0.80', '<') || version_compare($current_version, GLPI_VERSION, '>')) {
+        if (version_compare($current_version, GLPI_VERSION, '>')) {
             $message = sprintf(
                 __('Unsupported version (%1$s)'),
                 $current_version
@@ -257,47 +257,56 @@ class Update
         }
 
         $migrations = $this->getMigrationsToDo($current_version, $force_latest);
-        foreach ($migrations as $file => $function) {
-            include_once($file);
-            $function();
+        foreach ($migrations as $key => $migration_specs) {
+            include_once($migration_specs['file']);
+            $migration_specs['function']();
+
+            if ($key !== array_key_last($migrations)) {
+                // Set current version to target version to ensure complete migrations to not be replayed if one
+                // of remaining migrations fails.
+                //
+                // /!\ Do not dot this for last migration:
+                // 1. This should be done at the end of the whole update process.
+                // 2. Last migration target version value may be higher than GLPI_VERSION, when GLPI_VERSION uses a pre-release suffix.
+                Config::setConfigurationValues(
+                    'core',
+                    [
+                        'version' => $migration_specs['target_version']
+                    ]
+                );
+            }
         }
+
+        // Create default forms
+        $helpdesk_data_manager = new DefaultDataManager();
+        $helpdesk_data_manager->initializeDataIfNeeded();
+
+        // Initalize rules
+        $this->migration->displayTitle(__('Initializing rules...'));
+        RulesManager::initializeRules();
 
         if (($myisam_count = $DB->getMyIsamTables()->count()) > 0) {
             $message = sprintf(__('%d tables are using the deprecated MyISAM storage engine.'), $myisam_count)
                 . ' '
-                . sprintf(__('Run the "php bin/console %1$s" command to migrate them.'), 'glpi:migration:myisam_to_innodb');
+                . sprintf(__('Run the "%1$s" command to migrate them.'), 'php bin/console migration:myisam_to_innodb');
             $this->migration->displayError($message);
         }
         if (($datetime_count = $DB->getTzIncompatibleTables()->count()) > 0) {
             $message = sprintf(__('%1$s columns are using the deprecated datetime storage field type.'), $datetime_count)
                 . ' '
-                . sprintf(__('Run the "php bin/console %1$s" command to migrate them.'), 'glpi:migration:timestamps');
+                . sprintf(__('Run the "%1$s" command to migrate them.'), 'php bin/console migration:timestamps');
             $this->migration->displayError($message);
         }
-        /*
-         * FIXME: Remove `$DB->use_utf8mb4` and `$exclude_plugins = true` conditions in GLPI 10.1.
-         * These conditions are here only to prevent having this message on every migration to GLPI 10.0.x.
-         * Indeed, as migration command was not available in previous versions, users may not understand
-         * why this is considered as an error.
-         * Also, some plugins may not have yet handle the switch to utf8mb4.
-         */
-        if ($DB->use_utf8mb4 && ($non_utf8mb4_count = $DB->getNonUtf8mb4Tables(true)->count()) > 0) {
+        if (($non_utf8mb4_count = $DB->getNonUtf8mb4Tables()->count()) > 0) {
             $message = sprintf(__('%1$s tables are using the deprecated utf8mb3 storage charset.'), $non_utf8mb4_count)
                 . ' '
-                . sprintf(__('Run the "php bin/console %1$s" command to migrate them.'), 'glpi:migration:utf8mb4');
+                . sprintf(__('Run the "%1$s" command to migrate them.'), 'php bin/console migration:utf8mb4');
             $this->migration->displayError($message);
         }
-        /*
-         * FIXME: Remove `!$DB->allow_signed_keys` and `$exclude_plugins = true` conditions in GLPI 10.1.
-         * These conditions are here only to prevent having this message on every migration to GLPI 10.0.x.
-         * Indeed, as migration command was not available in previous versions, users may not understand
-         * why this is considered as an error.
-         * Also, some plugins may not have yet handle the switch to unsigned keys.
-         */
-        if (!$DB->allow_signed_keys && ($signed_keys_col_count = $DB->getSignedKeysColumns(true)->count()) > 0) {
+        if (($signed_keys_col_count = $DB->getSignedKeysColumns()->count()) > 0) {
             $message = sprintf(__('%d primary or foreign keys columns are using signed integers.'), $signed_keys_col_count)
                 . ' '
-                . sprintf(__('Run the "php bin/console %1$s" command to migrate them.'), 'glpi:migration:unsigned_keys');
+                . sprintf(__('Run the "%1$s" command to migrate them.'), 'php bin/console migration:unsigned_keys');
             $this->migration->displayError($message);
         }
 
@@ -333,11 +342,21 @@ class Update
        //generate security key if missing, and update db
         $glpikey = new GLPIKey();
         if (!$glpikey->keyExists() && !$glpikey->generate()) {
-            $this->migration->displayWarning(__('Unable to create security key file! You have to run "php bin/console glpi:security:change_key" command to manually create this file.'), true);
+            $this->migration->displayWarning(
+                sprintf(
+                    __('Unable to create security key file! You have to run the "%s" command to manually create this file.'),
+                    'php bin/console security:change_key'
+                ),
+                true
+            );
         }
 
-        // Check if schema has differences from the expected one but do not block the upgrade
-        $this->checkSchemaIntegrity();
+        $private_key_path = GLPI_CONFIG_DIR . '/oauth.pem';
+        $public_key_path = GLPI_CONFIG_DIR . '/oauth.pub';
+        if (!file_exists($private_key_path) && !file_exists($public_key_path)) {
+            $this->migration->displayMessage("Generating OAuth keys");
+            \Glpi\OAuth\Server::generateKeys();
+        }
     }
 
     /**
@@ -396,7 +415,7 @@ class Update
         $current_version = VersionParser::getNormalizedVersion($current_version);
 
         $pattern = '/^update_(?<source_version>\d+\.\d+\.(?:\d+|x))_to_(?<target_version>\d+\.\d+\.(?:\d+|x))\.php$/';
-        $migration_iterator = new DirectoryIterator(GLPI_ROOT . '/install/migrations/');
+        $migration_iterator = new DirectoryIterator($this->migrations_directory);
         foreach ($migration_iterator as $file) {
             $versions_matches = [];
             if ($file->isDir() || $file->isDot() || preg_match($pattern, $file->getFilename(), $versions_matches) !== 1) {
@@ -411,17 +430,21 @@ class Update
                 $force_migration = true;
             }
             if (version_compare($versions_matches['target_version'], $current_version, '>') || $force_migration) {
-                $migrations[$file->getRealPath()] = preg_replace(
-                    '/^update_(\d+)\.(\d+)\.(\d+|x)_to_(\d+)\.(\d+)\.(\d+|x)\.php$/',
-                    'update$1$2$3to$4$5$6',
-                    $file->getBasename()
-                );
+                $migrations[$file->getPathname()] = [
+                    'file'           => $file->getPathname(),
+                    'function'       => preg_replace(
+                        '/^update_(\d+)\.(\d+)\.(\d+|x)_to_(\d+)\.(\d+)\.(\d+|x)\.php$/',
+                        'update$1$2$3to$4$5$6',
+                        $file->getBasename()
+                    ),
+                    'target_version' => $versions_matches['target_version'],
+                ];
             }
         }
 
         ksort($migrations, SORT_NATURAL);
 
-        return $migrations;
+        return array_values($migrations);
     }
 
     /**
@@ -431,6 +454,7 @@ class Update
      */
     public static function isDbUpToDate(): bool
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         if (!array_key_exists('dbversion', $CFG_GLPI)) {

@@ -5,7 +5,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -30,6 +30,8 @@
  *
  * ---------------------------------------------------------------------
  */
+
+/* global escapeMarkupText */
 
 import SearchTokenizer from "./SearchTokenizer.js";
 
@@ -98,7 +100,7 @@ export default class SearchInput {
         }
 
         let new_data = {};
-        let old_data_attrs = {};
+        const old_data_attrs = {};
         if (typeof this.options.input_options.data === 'object') {
             new_data = this.options.input_options.data;
         } else if (this.options.input_options.data === 'copy') {
@@ -116,7 +118,7 @@ export default class SearchInput {
         // Add data attributes. We don't use $.data() because having the DOM attribute may be needed and using $.data doesn't add them.
         // Information from $.data will override any data attributes of the same name
         new_attrs = Object.assign(old_data_attrs, Object.keys(new_data).reduce((obj, key) => {
-            obj['data-' + key] = new_data[key];
+            obj[`data-${key}`] = new_data[key];
             return obj;
         }, new_attrs));
 
@@ -167,7 +169,7 @@ export default class SearchInput {
             e.preventDefault();
             e.stopPropagation();
             const tag = $(e.target).closest('li').attr('data-tag');
-            const node = $('<span class="search-input-tag-input">'+tag.trim()+':</span>').insertBefore($('.search-input-tag-input:last-of-type'));
+            const node = $(`<span class="search-input-tag-input">${tag.trim()}:</span>`).insertBefore($('.search-input-tag-input:last-of-type'));
             //Clear selected node's text
             const selected_node = this.getSelectedNode();
             $(selected_node).text('');
@@ -181,7 +183,7 @@ export default class SearchInput {
             e.stopPropagation();
             const prefix = $(e.target).closest('button.tag-prefix').attr('data-prefix');
             const tag = $(e.target).closest('li').attr('data-tag');
-            const node = $('<span class="search-input-tag-input">'+(prefix || '')+tag.trim()+':</span>').insertBefore($('.search-input-tag-input:last-of-type'));
+            const node = $(`<span class="search-input-tag-input">${prefix || ''}${tag.trim()}:</span>`).insertBefore($('.search-input-tag-input:last-of-type'));
             //Clear selected node's text
             const selected_node = this.getSelectedNode();
             $(selected_node).text('');
@@ -195,7 +197,7 @@ export default class SearchInput {
             const li = $(e.target).closest('li');
             const tag = li.closest('ul').attr('data-tag');
             const selected_term = li.text().trim();
-            const editing_node = input.find('.search-input-tag-input[data-tag="'+tag+'"]');
+            const editing_node = input.find(`.search-input-tag-input[data-tag="${tag}"]`);
             editing_node.text(`${tag}:${selected_term}`);
             this.tagifyInputNode(editing_node);
             this.placeCaretInDefaultInput();
@@ -214,7 +216,9 @@ export default class SearchInput {
 
         input.on('blur', '.search-input-tag-input', (e) => {
             const tag_input = $(e.target).closest('.search-input-tag-input');
-            this.tagifyInputNode(tag_input);
+            if (tag_input.length > 0 && tag_input.text().trim().length > 0) {
+                this.tagifyInputNode(tag_input);
+            }
         });
 
         input.on('keydown', '.search-input-tag-input', (e) => {
@@ -360,7 +364,7 @@ export default class SearchInput {
         });
 
         input.on('result_change', (e) => {
-            let text = this.getRawInput();
+            const text = this.getRawInput();
 
             const result = this.tokenizer.tokenize(text);
             const result_changed = JSON.stringify(result) !== JSON.stringify(this.last_result);
@@ -391,7 +395,7 @@ export default class SearchInput {
         } else if (token.exclusion) {
             tag_color_override = '#80000080';
         }
-        const dark_mode = $('html').css('--is-dark').trim() === 'true';
+        const dark_mode = document.documentElement.getAttribute('data-glpi-theme-dark') === '1';
         const text_color = $(document.body).css('color');
         let style_overrides = '';
         if (!token.tag) {
@@ -407,8 +411,8 @@ export default class SearchInput {
         } else {
             style_overrides = tag_color_override ? `style="background-color: ${tag_color_override} !important"` : '';
         }
-        return `<span class="search-input-tag badge bg-secondary me-1" contenteditable="false" data-tag="${token.tag}" ${style_overrides}>
-                  <span class="search-input-tag-value" contenteditable="false">${tag_display}${token.term || ''}</span>
+        return `<span class="search-input-tag badge bg-secondary text-secondary-fg me-1" contenteditable="false" data-tag="${token.tag}" ${style_overrides}>
+                  <span class="search-input-tag-value" contenteditable="false">${tag_display}${escapeMarkupText(token.term) || ''}</span>
                   <i class="ti ti-x cursor-pointer ms-1" title="${__('Delete')}" contenteditable="false"></i>
                </span>`;
     }
@@ -445,7 +449,7 @@ export default class SearchInput {
             } else {
                 try {
                     node.remove();
-                } catch (e) {
+                } catch {
                     // node is already removed. In some cases, this can be attempted to be removed twice
                 }
             }
@@ -475,7 +479,9 @@ export default class SearchInput {
                 const term_text = $(`<span>${last_token.term}</span>`).text();
                 if (autocomplete_value.localeCompare(term_text, undefined, { sensitivity: 'accent' }) === 0) {
                     last_token.term = t;
-                    node.replaceWith($(this.tokenToTagHtml(last_token)));
+                    const replacement = $(this.tokenToTagHtml(last_token));
+                    replacement.data('token', last_token);
+                    node.replaceWith(replacement);
                 }
             });
         }
@@ -486,9 +492,9 @@ export default class SearchInput {
             tag.removeClass('search-input-tag');
             tag.addClass('search-input-tag-input');
             tag.attr('contenteditable', 'true');
-            const v = tag.text().trim();
+            const token = tag.data('token');
             tag.empty();
-            tag.text(v);
+            tag.text(token.raw);
             tag.focus();
             // place cursor at end of the tag text
             this.placeCaretAtEndOfNode(tag.get(0));
@@ -575,7 +581,14 @@ export default class SearchInput {
     }
 
     getRawInput() {
-        return this.displayed_input.get(0).textContent;
+        let raw_input = '';
+        this.displayed_input.find('.search-input-tag').each((i, node) => {
+            const n = $(node);
+            if (n.data('token') !== undefined) {
+                raw_input += `${n.data('token').raw} `;
+            }
+        });
+        return raw_input.trim();
     }
 
     refreshPopover() {
@@ -599,7 +612,7 @@ export default class SearchInput {
                     return this.getTagsHelperContent();
                 }
                 const tokens = this.tokenizer.tokenize(t).tokens;
-                const max = Math.max.apply(Math, tokens.map((token) => {
+                const max = Math.max(...tokens.map((token) => {
                     return token.position;
                 }));
                 last_token = tokens.find((token) => {

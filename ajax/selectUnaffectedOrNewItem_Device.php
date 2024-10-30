@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -37,14 +37,16 @@
  * @since 0.85
  */
 
-include('../inc/includes.php');
+use Glpi\DBAL\QueryExpression;
+use Glpi\DBAL\QueryFunction;
+
+/** @var \DBmysql $DB */
+global $DB;
 
 header("Content-Type: text/html; charset=UTF-8");
 Html::header_nocache();
 
 Session::checkCentralAccess();
-
-/** @global DBmysql $DB */
 
 // Make a select box
 if (
@@ -56,12 +58,10 @@ if (
 
     if (count($linktype::getSpecificities())) {
         $keys = array_keys($linktype::getSpecificities());
-        array_walk($keys, static function (&$val) use ($DB) {
-            return $DB->quoteName($val);
-        });
-        $name_field = new QueryExpression(
-            "CONCAT_WS(' - ', " . implode(', ', $keys) . ")"
-            . "AS " . $DB->quoteName("name")
+        $name_field = QueryFunction::concat_ws(
+            separator: new QueryExpression($DB::quoteValue(' - ')),
+            params: $keys,
+            alias: 'name'
         );
     } else {
         $name_field = 'id AS name';
@@ -76,11 +76,11 @@ if (
             ]
         ]
     );
-    echo "<table class='w-100'><tr><td>" . __('Choose an existing device') . "</td><td rowspan='2'>" .
-        __('and/or') . "</td><td>" . __('Add new devices') . '</td></tr>';
+    echo "<table class='w-100'><tr><td>" . __s('Choose an existing device') . "</td><td rowspan='2'>" .
+        __('and/or') . "</td><td>" . __s('Add new devices') . '</td></tr>';
     echo "<tr><td>";
-    if ($result->count() == 0) {
-        echo __('No unaffected device!');
+    if (count($result) === 0) {
+        echo __s('No unaffected device!');
     } else {
         $devices = [];
         foreach ($result as $row) {

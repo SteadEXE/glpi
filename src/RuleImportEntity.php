@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @copyright 2010-2022 by the FusionInventory Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
@@ -40,26 +40,14 @@ class RuleImportEntity extends Rule
 {
    // From Rule
     public static $rightname = 'rule_import';
-    public $can_sort  = true;
 
     public function getTitle()
     {
         return __('Rules for assigning an item to an entity');
     }
 
-
-    /**
-     * @see Rule::maxActionsCount()
-     **/
-    public function maxActionsCount()
-    {
-       // Unlimited
-        return 5;
-    }
-
     public function executeActions($output, $params, array $input = [])
     {
-
         if (count($this->actions)) {
             foreach ($this->actions as $action) {
                 switch ($action->fields["action_type"]) {
@@ -69,7 +57,7 @@ class RuleImportEntity extends Rule
 
                     case "regex_result":
                       //Assign entity using the regex's result
-                        if ($action->fields["field"] == "_affect_entity_by_tag") {
+                        if ($action->fields["field"] === "_affect_entity_by_tag") {
                              //Get the TAG from the regex's results
                             if (isset($this->regex_results[0])) {
                                 $res = RuleAction::getRegexResultById(
@@ -79,9 +67,9 @@ class RuleImportEntity extends Rule
                             } else {
                                 $res = $action->fields["value"];
                             }
-                            if ($res != null) {
-                                 //Get the entity associated with the TAG
-                                 $target_entity = Entity::getEntityIDByTag(addslashes($res));
+                            if ($res !== null) {
+                                 // Get the entity associated with the TAG
+                                 $target_entity = Entity::getEntityIDByTag($res);
                                 if ($target_entity != '') {
                                     $output["entities_id"] = $target_entity;
                                 }
@@ -94,10 +82,8 @@ class RuleImportEntity extends Rule
         return $output;
     }
 
-
     public function getCriterias()
     {
-
         return [
             'tag' => [
                 'field' => 'name',
@@ -140,19 +126,17 @@ class RuleImportEntity extends Rule
         ];
     }
 
-
-    /**
-     * @since 0.84
-     *
-     * @see Rule::displayAdditionalRuleCondition()
-     **/
     public function displayAdditionalRuleCondition($condition, $criteria, $name, $value, $test = false)
     {
-        global $PLUGIN_HOOKS, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var array $PLUGIN_HOOKS
+         */
+        global $CFG_GLPI, $PLUGIN_HOOKS;
 
-        if ($criteria['field'] == '_source') {
-            $tab = ['GLPI' => __('GLPI')];
-            foreach ($PLUGIN_HOOKS['import_item'] as $plug => $types) {
+        if ($criteria['field'] === '_source') {
+            $tab = ['GLPI' => __('GLPI'), 'NATIVE_INVENTORY' => AutoUpdateSystem::getLabelFor(AutoUpdateSystem::NATIVE_INVENTORY)];
+            foreach ($PLUGIN_HOOKS['import_item'] ?? [] as $plug => $types) {
                 if (!Plugin::isPluginActive($plug)) {
                     continue;
                 }
@@ -162,7 +146,7 @@ class RuleImportEntity extends Rule
             return true;
         }
 
-        if ($criteria['field'] == 'itemtype') {
+        if ($criteria['field'] === 'itemtype') {
             Dropdown::showItemTypes($name, $CFG_GLPI['asset_types'], ['value' => $value]);
             return true;
         }
@@ -170,45 +154,38 @@ class RuleImportEntity extends Rule
         switch ($condition) {
             case Rule::PATTERN_FIND:
                 return false;
-
             case Rule::PATTERN_IS_EMPTY:
                 Dropdown::showYesNo($name, 0, 0);
                 return true;
-
-            case Rule::PATTERN_EXISTS:
-                echo Dropdown::showYesNo($name, 1, 0);
-                return true;
-
             case Rule::PATTERN_DOES_NOT_EXISTS:
-                echo Dropdown::showYesNo($name, 1, 0);
+            case Rule::PATTERN_EXISTS:
+                Dropdown::showYesNo($name, 1, 0);
                 return true;
         }
         return false;
     }
 
-
     public function getAdditionalCriteriaDisplayPattern($ID, $condition, $pattern)
     {
-
         $crit = $this->getCriteria($ID);
-        if (count($crit) && $crit['field'] == '_source') {
-            if ($pattern != 'GLPI') {
+        if (count($crit) && $crit['field'] === '_source') {
+            if ($pattern === 'GLPI') {
+                $name = $pattern;
+            } elseif ($pattern === 'NATIVE_INVENTORY') {
+                $name = AutoUpdateSystem::getLabelFor(AutoUpdateSystem::NATIVE_INVENTORY);
+            } else {
                 $name = Plugin::getInfo($pattern, 'name');
                 if (empty($name)) {
                     return false;
                 }
-            } else {
-                $name = $pattern;
             }
             return $name;
         }
         return false;
     }
 
-
     public function process(&$input, &$output, &$params, &$options = [])
     {
-
         if ($this->validateCriterias($options)) {
             $this->regex_results     = [];
             $this->criterias_results = [];
@@ -220,8 +197,8 @@ class RuleImportEntity extends Rule
                 $output = $this->executeActions($output, $params);
                 if (!isset($output['pass_rule'])) {
                     $this->updateOnlyCriteria($options, $refoutput, $output);
-                   //Hook
-                    $hook_params["sub_type"] = $this->getType();
+                    // Hook
+                    $hook_params["sub_type"] = static::class;
                     $hook_params["ruleid"]   = $this->fields["id"];
                     $hook_params["input"]    = $input;
                     $hook_params["output"]   = $output;
@@ -231,7 +208,6 @@ class RuleImportEntity extends Rule
             }
         }
     }
-
 
     public function getActions()
     {
@@ -260,12 +236,12 @@ class RuleImportEntity extends Rule
                 'type' => 'yesno'
             ],
             'groups_id_tech' => [
-                'name' => __('Group in charge of the hardware'),
+                'name' => __('Group in charge'),
                 'type' => 'dropdown',
                 'table' => Group::getTable()
             ],
             'users_id_tech' => [
-                'name' => __('Technician in charge of the hardware'),
+                'name' => __('Technician in charge'),
                 'type' => 'dropdown_users'
             ]
         ];
@@ -273,7 +249,6 @@ class RuleImportEntity extends Rule
 
         return $actions;
     }
-
 
     public static function getIcon()
     {

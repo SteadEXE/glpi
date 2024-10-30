@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,8 +34,9 @@
  */
 
 use Glpi\Event;
+use Glpi\Exception\Http\NotFoundHttpException;
 
-include('../inc/includes.php');
+Session::checkRight(NetworkName::$rightname, READ);
 
 $nn = new NetworkName();
 
@@ -54,6 +55,22 @@ if (isset($_POST["add"])) {
         if ($_SESSION['glpibackcreated']) {
             Html::redirect($nn->getLinkURL());
         }
+    }
+    Html::back();
+} else if (isset($_POST["delete"])) {
+    $nn->check($_POST["id"], DELETE);
+    $nn->delete($_POST);
+
+    Event::log(
+        $_POST["id"],
+        $_POST['itemtype'],
+        4,
+        "inventory",
+        //TRANS: %s is the user login
+        sprintf(__('%s deletes an item'), $_SESSION["glpiname"])
+    );
+    if ($_SESSION['glpibackcreated']) {
+        Html::redirect($nn->getLinkURL());
     }
     Html::back();
 } else if (isset($_POST["purge"])) {
@@ -120,7 +137,7 @@ if (isset($_POST["add"])) {
         );
         Html::back();
     } else {
-        Html::displayNotFoundError();
+        throw new NotFoundHttpException();
     }
 } else {
     if (!isset($_GET["id"])) {

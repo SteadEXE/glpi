@@ -7,7 +7,7 @@
 #
 # http://glpi-project.org
 #
-# @copyright 2015-2022 Teclib' and contributors.
+# @copyright 2015-2024 Teclib' and contributors.
 # @copyright 2003-2014 by the INDEPNET Development Team.
 # @licence   https://www.gnu.org/licenses/gpl-3.0.html
 #
@@ -37,20 +37,12 @@ cd $(dirname $0)
 
 if which apigen &>/dev/null
 then
-   version=$(php -r '
-      require __DIR__ . "/../inc/define.php";
-      echo GLPI_VERSION;
-   ')
-   apigen generate \
-      --access-levels=public,protected,private \
-      --todo \
-      --deprecated \
-      --tree \
+   version=$(php -r 'include(__DIR__ . "/../inc/includes.php"); echo GLPI_VERSION;')
+   apigen \
+      --working-dir ../ \
       --title "GLPI version $version API" \
-      --source ../inc \
-      --destination api
-
+      --output api \
+      ../src/
 else
-   echo -e "\nApiGen not found, see http://www.apigen.org/\n"
-
+   echo -e "\nApiGen not found, see https://github.com/ApiGen/ApiGen\n"
 fi

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,6 +33,8 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\DBAL\QueryExpression;
+
 /**
  * Update from 9.5.6 to 9.5.7
  *
@@ -40,7 +42,11 @@
  **/
 function update956to957()
 {
-    /** @global Migration $migration */
+    /**
+     * @var array $CFG_GLPI
+     * @var \DBmysql $DB
+     * @var \Migration $migration
+     */
     global $DB, $migration, $CFG_GLPI;
 
     $current_config   = Config::getConfigurationValues('core');

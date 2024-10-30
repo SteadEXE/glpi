@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -32,8 +32,6 @@
  *
  * ---------------------------------------------------------------------
  */
-
-include('../inc/includes.php');
 
 Session::checkRight("config", UPDATE);
 
@@ -64,12 +62,12 @@ if (isset($_POST["update"])) {
     $config_mail->redirectToList();
 } else if (isset($_POST["test"])) {
     if (AuthMail::testAuth($_POST["imap_string"], $_POST["imap_login"], $_POST["imap_password"])) {
-        Session::addMessageAfterRedirect(__('Test successful'));
+        Session::addMessageAfterRedirect(__s('Test successful'));
     } else {
-        Session::addMessageAfterRedirect(__('Test failed'), false, ERROR);
+        Session::addMessageAfterRedirect(__s('Test failed'), false, ERROR);
     }
     Html::back();
 }
 
-$menus = ["config", "auth", "imap"];
+$menus = ["config", "auth", "AuthMail"];
 AuthMail::displayFullPageForItem($_GET['id'], $menus);

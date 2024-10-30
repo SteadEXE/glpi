@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,13 +33,17 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Features\Clonable;
+
 /**
  * Template for followups
  * @since 9.5
  **/
 class ITILFollowupTemplate extends AbstractITILChildTemplate
 {
-   // From CommonDBTM
+    use Clonable;
+
+    // From CommonDBTM
     public $dohistory          = true;
     public $can_be_translated  = true;
 
@@ -60,19 +64,22 @@ class ITILFollowupTemplate extends AbstractITILChildTemplate
                 'type'  => 'dropdownValue',
                 'list'  => true
             ], [
+                'name'  => 'pendingreasons_id',
+                'label' => PendingReason::getTypeName(1),
+                'type'  => 'dropdownValue',
+                'list'  => true
+            ], [
                 'name'  => 'is_private',
                 'label' => __('Private'),
                 'type'  => 'bool'
             ], [
-                'name'           => 'content',
-                'label'          => __('Content'),
-                'type'           => 'tinymce',
-                // As content copying from template is not using the image pasting process, these images
-                // are not correctly processed. Indeed, document item corresponding to the destination item is not created and
-                // image src is not containing the ITIL item foreign key, so image will not be visible for helpdesk profiles.
-                // As fixing it is really complex (requires lot of refactoring in images handling, both on JS and PHP side),
-                // it is preferable to disable usage of images in templates.
-                'disable_images' => true,
+                'name'  => 'content',
+                'label' => __('Content'),
+                'type'  => 'tinymce',
+                // Images should remains in base64 in templates.
+                // When an element will be created from a template, tinymce will catch the base64 image and trigger the
+                // document upload process.
+                'convert_images_to_documents' => false,
             ]
         ];
     }
@@ -113,5 +120,10 @@ class ITILFollowupTemplate extends AbstractITILChildTemplate
     public static function getIcon()
     {
         return "fas fa-layer-group";
+    }
+
+    public function getCloneRelations(): array
+    {
+        return [];
     }
 }

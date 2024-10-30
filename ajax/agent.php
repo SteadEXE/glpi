@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,24 +33,26 @@
  * ---------------------------------------------------------------------
  */
 
-use Glpi\Http\Response;
+use Glpi\Exception\Http\AccessDeniedHttpException;
+use Glpi\Exception\Http\NotFoundHttpException;
 
-$AJAX_INCLUDE = 1;
-include('../inc/includes.php');
+/** @var \Glpi\Controller\LegacyFileLoadController $this */
+$this->setAjax();
+
 header("Content-Type: application/json; charset=UTF-8");
 Html::header_nocache();
-
-Session::checkLoginUser();
-
 
 if (isset($_POST['action']) && isset($_POST['id'])) {
     $agent = new Agent();
     if (!$agent->getFromDB($_POST['id'])) {
-        Response::sendError(404, 'Unable to load agent #' . $_POST['id']);
-        return;
+        throw new NotFoundHttpException('Unable to load agent #' . $_POST['id']);
+    }
+    if (!$agent::canView()) {
+        throw new AccessDeniedHttpException();
     }
     $answer = [];
 
+    Session::writeClose();
     switch ($_POST['action']) {
         case Agent::ACTION_INVENTORY:
             $answer = $agent->requestInventory();

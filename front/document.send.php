@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -34,36 +34,51 @@
  */
 
 use Glpi\Inventory\Conf;
-
-include('../inc/includes.php');
-
-if (!$CFG_GLPI["use_public_faq"]) {
-    Session::checkLoginUser();
-}
+use Glpi\Exception\Http\AccessDeniedHttpException;
+use Glpi\Exception\Http\BadRequestHttpException;
+use Glpi\Exception\Http\HttpException;
+use Glpi\Exception\Http\NotFoundHttpException;
 
 $doc = new Document();
 
-if (isset($_GET['docid'])) { // docid for document
+if (isset($_GET['docid'])) {
+    // Get file corresponding to given Document id.
+
+    // Allow anonymous access at this point to be able to serve documents related to
+    // public FAQ.
+    // Document::canViewFile() will do appropriate checks depending on GLPI configuration.
+
     if (!$doc->getFromDB($_GET['docid'])) {
-        Html::displayErrorAndDie(__('Unknown file'), true);
+        $exception = new NotFoundHttpException();
+        $exception->setMessageToDisplay(__('Unknown file'));
+        throw $exception;
     }
 
     if (!file_exists(GLPI_DOC_DIR . "/" . $doc->fields['filepath'])) {
-        Html::displayErrorAndDie(__('File not found'), true); // Not found
+        $exception = new NotFoundHttpException();
+        $exception->setMessageToDisplay(sprintf(__('File %s not found.'), $doc->fields['filename']));
+        throw $exception;
     } else if ($doc->canViewFile($_GET)) {
         if (
             $doc->fields['sha1sum']
             && $doc->fields['sha1sum'] != sha1_file(GLPI_DOC_DIR . "/" . $doc->fields['filepath'])
         ) {
-            Html::displayErrorAndDie(__('File is altered (bad checksum)'), true); // Doc alterated
+            $exception = new HttpException(500);
+            $exception->setMessageToDisplay(__('File is altered (bad checksum)'));
+            throw $exception;
         } else {
-            $context = isset($_GET['context']) ? $_GET['context'] : null;
-            $doc->send($context);
+            $doc->send();
         }
     } else {
-        Html::displayErrorAndDie(__('Unauthorized access to this file'), true); // No right
+        $exception = new AccessDeniedHttpException();
+        $exception->setMessageToDisplay(__('Unauthorized access to this file'));
+        throw $exception;
     }
-} else if (isset($_GET["file"])) { // for other file
+} else if (isset($_GET["file"])) {
+    // Get file corresponding to given path.
+
+    Session::checkLoginUser(); // Do not allow anonymous access
+
     $splitter = explode("/", $_GET["file"], 2);
     $mime = null;
     if (count($splitter) == 2) {
@@ -84,11 +99,9 @@ if (isset($_GET['docid'])) { // docid for document
             }
         }
 
-        if ($splitter[0] == "_inventory") {
+        if ($splitter[0] == "_inventory" && Session::haveRight(Conf::$rightname, READ)) {
             $iconf = new Conf();
             if ($iconf->isInventoryFile(GLPI_INVENTORY_DIR . '/' . $splitter[1])) {
-               // Can use expires header as picture file path changes when picture changes.
-                $expires_headers = true;
                 $send = GLPI_INVENTORY_DIR . '/' . $splitter[1];
 
                 $finfo = new finfo(FILEINFO_MIME_TYPE);
@@ -104,9 +117,13 @@ if (isset($_GET['docid'])) { // docid for document
         if ($send && file_exists($send)) {
             Toolbox::sendFile($send, $splitter[1], $mime, $expires_headers);
         } else {
-            Html::displayErrorAndDie(__('Unauthorized access to this file'), true);
+            $exception = new AccessDeniedHttpException();
+            $exception->setMessageToDisplay(__('Unauthorized access to this file'));
+            throw $exception;
         }
     } else {
-        Html::displayErrorAndDie(__('Invalid filename'), true);
+        $exception = new BadRequestHttpException();
+        $exception->setMessageToDisplay(__('Invalid filename'));
+        throw $exception;
     }
 }

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -32,6 +32,9 @@
  *
  * ---------------------------------------------------------------------
  */
+
+use Glpi\DBAL\QueryExpression;
+use Glpi\DBAL\QueryFunction;
 
 class Telemetry extends CommonGLPI
 {
@@ -67,6 +70,7 @@ class Telemetry extends CommonGLPI
      */
     public static function grabGlpiInfos()
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $glpi = [
@@ -117,12 +121,18 @@ class Telemetry extends CommonGLPI
      */
     public static function grabDbInfos()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $dbinfos = $DB->getInfo();
 
         $size_res = $DB->request([
-            'SELECT' => new \QueryExpression("ROUND(SUM(data_length + index_length) / 1024 / 1024, 1) AS dbsize"),
+            'SELECT' => [
+                QueryFunction::round(
+                    expression: new QueryExpression(QueryFunction::sum(new QueryExpression('data_length + index_length')) . ' / 1024 / 1024'),
+                    alias: 'dbsize',
+                )
+            ],
             'FROM'   => 'information_schema.tables',
             'WHERE'  => ['table_schema' => $DB->dbdefault]
         ])->current();
@@ -139,12 +149,15 @@ class Telemetry extends CommonGLPI
     }
 
     /**
-     * Grab web server part information
+     * Grab web server part information.
+     * As we cannot rely on `$_SERVER` information on CLI context, we have to get to do a request to the GLPI webserver
+     * and get the information from its response, if it is available.
      *
      * @return array
      */
     public static function grabWebserverInfos()
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $server = [
@@ -153,7 +166,7 @@ class Telemetry extends CommonGLPI
         ];
 
         if (!filter_var(gethostbyname(parse_url($CFG_GLPI['url_base'], PHP_URL_HOST)), FILTER_VALIDATE_IP)) {
-           // Do not try to get headers if hostname cannot be resolved
+            // Do not try to get headers if hostname cannot be resolved
             return $server;
         }
 
@@ -163,16 +176,25 @@ class Telemetry extends CommonGLPI
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_HEADER, 1);
 
-       // Issue #3180 - disable SSL certificate validation (wildcard, self-signed)
+        // Issue #3180 - disable SSL certificate validation (wildcard, self-signed)
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 
         if ($response = curl_exec($ch)) {
             $headers = substr($response, 0, curl_getinfo($ch, CURLINFO_HEADER_SIZE));
             $header_matches = [];
-            if (preg_match('/^Server: (?<engine>[^ ]+)\/(?<version>[^ ]+)/im', $headers, $header_matches)) {
+            // see RFC2616
+            //
+            // `Server` header may contains multiple values (e.g. Apache/2.4.46 (Debian) mod_fcgid/2.3.9 OpenSSL/1.1.1d).
+            // We only get the first value, assuming it corresponds to the server engine.
+            $separators = '\/() ';
+            $server_string_pattern = "(?<engine>[^{$separators}]+)" // mandatory `product`
+                . "(\/(?<version>[^$separators]+))?" // optional `/version`
+                . "( (?<comment>\([^$separators]+\)))?" // optional ` (comment)`
+            ;
+            if (preg_match("/^Server: {$server_string_pattern}/im", $headers, $header_matches) === 1) {
                 $server['engine']  = $header_matches['engine'];
-                $server['version'] = $header_matches['version'];
+                $server['version'] = $header_matches['version'] ?? null;
             }
         }
 
@@ -344,6 +366,7 @@ class Telemetry extends CommonGLPI
      */
     public static function getViewLink()
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $out = "<a id='view_telemetry' href='{$CFG_GLPI['root_doc']}/ajax/telemetry.php' class='btn btn-sm btn-info mt-2'>
@@ -369,6 +392,7 @@ class Telemetry extends CommonGLPI
      */
     public static function enable()
     {
+        /** @var \DBmysql $DB */
         global $DB;
         $DB->update(
             'glpi_crontasks',
@@ -384,6 +408,7 @@ class Telemetry extends CommonGLPI
      */
     public static function disable(): void
     {
+        /** @var \DBmysql $DB */
         global $DB;
         $DB->update(
             'glpi_crontasks',
@@ -399,6 +424,7 @@ class Telemetry extends CommonGLPI
      */
     public static function isEnabled()
     {
+        /** @var \DBmysql $DB */
         global $DB;
         $iterator = $DB->request([
             'SELECT' => ['state'],

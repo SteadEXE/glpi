@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -35,21 +35,8 @@
 
 class RuleDictionnaryPhoneType extends RuleDictionnaryDropdown
 {
-    /**
-     * Constructor
-     **/
-    public function __construct()
-    {
-        parent::__construct('RuleDictionnaryPhoneType');
-    }
-
-
-    /**
-     * @see Rule::getCriterias()
-     **/
     public function getCriterias()
     {
-
         static $criterias = [];
 
         if (count($criterias)) {
@@ -63,13 +50,8 @@ class RuleDictionnaryPhoneType extends RuleDictionnaryDropdown
         return $criterias;
     }
 
-
-    /**
-     * @see Rule::getActions()
-     **/
     public function getActions()
     {
-
         $actions                          = [];
         $actions['name']['name']          = _n('Type', 'Types', 1);
         $actions['name']['force_actions'] = ['append_regex_result', 'assign', 'regex_result'];

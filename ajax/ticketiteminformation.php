@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -35,13 +35,12 @@
 
 // Direct access to file
 if (strpos($_SERVER['PHP_SELF'], "ticketiteminformation.php")) {
-    $AJAX_INCLUDE = 1;
-    include('../inc/includes.php');
+    /** @var \Glpi\Controller\LegacyFileLoadController $this */
+    $this->setAjax();
+
     header("Content-Type: text/html; charset=UTF-8");
     Html::header_nocache();
 }
-
-Session::checkLoginUser();
 
 if (isset($_POST["my_items"]) && !empty($_POST["my_items"])) {
     $splitter = explode("_", $_POST["my_items"]);
@@ -57,12 +56,13 @@ if (
 ) {
    // Security
     if (!class_exists($_POST['itemtype'])) {
-        exit();
+        return;
     }
 
     $days   = 3;
+
     $ticket = new Ticket();
-    $data   = $ticket->getActiveOrSolvedLastDaysTicketsForItem(
+    $data   = $ticket->getActiveOrSolvedLastDaysForItem(
         $_POST['itemtype'],
         $_POST['items_id'],
         $days

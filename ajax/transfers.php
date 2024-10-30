@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,13 +33,13 @@
  * ---------------------------------------------------------------------
  */
 
-include('../inc/includes.php');
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
+
 header("Content-Type: text/html; charset=UTF-8");
 Html::header_nocache();
 
 Session::checkRight("transfer", READ);
-
-/** @global array $CFG_GLPI */
 
 if (isset($_POST["id"]) && ($_POST["id"] > 0)) {
     $transfer = new Transfer();
@@ -48,5 +48,3 @@ if (isset($_POST["id"]) && ($_POST["id"] > 0)) {
         ['target' => $CFG_GLPI["root_doc"] . "/front/transfer.action.php"]
     );
 }
-
-Html::ajaxFooter();

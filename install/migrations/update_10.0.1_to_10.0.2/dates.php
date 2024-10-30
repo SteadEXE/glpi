@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,9 +33,11 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\DBAL\QueryExpression;
+
 /**
- * @var DB $DB
- * @var Migration $migration
+ * @var \DBmysql $DB
+ * @var \Migration $migration
  */
 
 // Fix invalid zero dates
@@ -44,16 +46,32 @@
 $columns_iterator = $DB->request(
     [
         'SELECT' => [
-            'table_name AS TABLE_NAME',
-            'column_name AS COLUMN_NAME',
-            'column_default AS COLUMN_DEFAULT',
-            'data_type AS DATA_TYPE',
-            'is_nullable AS IS_NULLABLE',
+            'information_schema.columns.table_name AS TABLE_NAME',
+            'information_schema.columns.column_name AS COLUMN_NAME',
+            'information_schema.columns.column_default AS COLUMN_DEFAULT',
+            'information_schema.columns.data_type AS DATA_TYPE',
+            'information_schema.columns.is_nullable AS IS_NULLABLE',
         ],
         'FROM'   => 'information_schema.columns',
+        'INNER JOIN' => [
+            'information_schema.tables' => [
+                'FKEY' => [
+                    'information_schema.tables'  => 'table_name',
+                    'information_schema.columns' => 'table_name',
+                    [
+                        'AND' => [
+                            'information_schema.tables.table_schema' => new QueryExpression(
+                                $DB->quoteName('information_schema.columns.table_schema')
+                            ),
+                        ]
+                    ],
+                ]
+            ]
+        ],
         'WHERE'  => [
-            'table_schema' => $DB->dbdefault,
-            'data_type'    => ['timestamp', 'datetime', 'date'],
+            'information_schema.tables.table_schema' => $DB->dbdefault,
+            'information_schema.tables.table_type'   => 'BASE TABLE',
+            'information_schema.columns.data_type'   => ['timestamp', 'datetime', 'date'],
         ],
         'ORDER'  => ['TABLE_NAME', 'COLUMN_NAME'],
     ]
@@ -71,8 +89,8 @@ foreach ($columns_iterator as $column) {
             break;
         case 'timestamp':
             // Min value has is "1970-01-01 00:00:01" in UTC, so if we try to use this value in a timezone with a positive offset
-            // following error will be trigerred: "Incorrect datetime value: '1970-01-01 00:00:01' for column ..."
-            $min_value = new \QueryExpression(
+            // following error will be triggered: "Incorrect datetime value: '1970-01-01 00:00:01' for column ..."
+            $min_value = new QueryExpression(
                 sprintf(
                     'CONVERT_TZ(%s, %s, (SELECT @@SESSION.time_zone))',
                     $DB->quoteValue('1970-01-01 00:00:01'),

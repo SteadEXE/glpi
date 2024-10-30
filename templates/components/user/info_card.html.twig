@@ -5,7 +5,7 @@
  #
  # http://glpi-project.org
  #
- # @copyright 2015-2022 Teclib' and contributors.
+ # @copyright 2015-2024 Teclib' and contributors.
  # @copyright 2003-2014 by the INDEPNET Development Team.
  # @licence   https://www.gnu.org/licenses/gpl-3.0.html
  #
@@ -39,6 +39,7 @@
          {% if user['id'] %}
             {{ include('components/user/picture.html.twig', {
                'users_id': user['id'],
+               'user_object': user_object,
                'enable_anonymization': enable_anonymization
             }) }}
          {% endif %}
@@ -53,22 +54,43 @@
          </h4>
 
          <div class="text-muted">
+            {% if user['login'] is not empty %}
+                <div>
+                    <i class="fa-fw fas fa-id-badge"></i>
+                    {{ user['login'] }}
+                </div>
+            {% endif %}
             {% if user['email']|length > 0 %}
                <div>
                   <i class="fas fa-fw fa-envelope"></i>
                   <a href="mailto:{{ user['email'] }}">{{ user['email'] }}</a>
                </div>
             {% endif %}
-            {% if user['phone']|length > 0 %}
+            {% if not user['phone'] is empty or not user['phone2'] is empty %}
                <div>
-                  <i class="fas fa-fw fa-phone"></i>
-                  <a href="tel:{{ user['phone'] }}">{{ user['phone'] }}</a>
+                  {% if not user['phone'] is empty %}
+                     <i class="fas fa-fw fa-phone"></i>
+                     <a href="tel:{{ user['phone'] }}">{{ user['phone'] }}</a>
+                  {% endif %}
+                  {% if not user['phone'] is empty and not user['phone2'] is empty %}
+                     <span> - </span>
+                  {% endif %}
+                  {% if not user['phone2'] is empty %}
+                     <i class="fas fa-fw fa-phone"></i>
+                     <a href="tel:{{ user['phone2'] }}">{{ user['phone2'] }}</a>
+                  {% endif %}
                </div>
             {% endif %}
             {% if user['mobile']|length > 0 %}
                <div>
                   <i class="fas fa-fw fa-mobile"></i>
                   <a href="tel:{{ user['mobile'] }}">{{ user['mobile'] }}</a>
+               </div>
+            {% endif %}
+            {% if user['registration_number']|length > 0 %}
+               <div>
+                  <i class="fas fa-fw fa-id-card-clip"></i>
+                  {{ user['registration_number'] }}
                </div>
             {% endif %}
             {% if user['locations_id'] > 0 %}

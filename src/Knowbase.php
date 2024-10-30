@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,6 +33,9 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\DBAL\QueryExpression;
+use Glpi\DBAL\QuerySubQuery;
+
 /**
  * Knowbase Class
  *
@@ -42,15 +45,12 @@ class Knowbase extends CommonGLPI
 {
     public static function getTypeName($nb = 0)
     {
-
-       // No plural
+        // No plural
         return __('Knowledge base');
     }
 
-
     public function defineTabs($options = [])
     {
-
         $ong = [];
         $this->addStandardTab(__CLASS__, $ong, $options);
 
@@ -58,62 +58,46 @@ class Knowbase extends CommonGLPI
         return $ong;
     }
 
-
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0)
     {
-
-        if ($item->getType() == __CLASS__) {
+        if ($item::class === self::class) {
             $tabs[1] = _x('button', 'Search');
             $tabs[2] = _x('button', 'Browse');
-            if (KnowbaseItem::canUpdate()) {
-                $tabs[3] = _x('button', 'Manage');
-            }
 
             return $tabs;
         }
         return '';
     }
 
-
     public static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0)
     {
-
-        if ($item->getType() == __CLASS__) {
+        if ($item::class === self::class) {
             switch ($tabnum) {
                 case 1: // all
                     $item->showSearchView();
                     break;
 
                 case 2:
-                    $item->showBrowseView();
-                    break;
-
-                case 3:
-                    $item->showManageView();
+                    Search::show('KnowbaseItem');
                     break;
             }
         }
         return true;
     }
 
-
     /**
      * Show the knowbase search view
      **/
     public static function showSearchView()
     {
-
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
        // Search a solution
-        if (
-            !isset($_GET["contains"])
-            && isset($_GET["itemtype"])
-            && isset($_GET["items_id"])
-        ) {
-            if (in_array($_GET["item_itemtype"], $CFG_GLPI['kb_types']) && $item = getItemForItemtype($_GET["itemtype"])) {
+        if (isset($_GET["itemtype"], $_GET["items_id"]) && !isset($_GET["contains"])) {
+            if (in_array($_GET["item_itemtype"], $CFG_GLPI['kb_types'], true) && $item = getItemForItemtype($_GET["itemtype"])) {
                 if ($item->can($_GET["item_items_id"], READ)) {
-                    $_GET["contains"] = addslashes($item->getField('name'));
+                    $_GET["contains"] = $item->getField('name');
                 }
             }
         }
@@ -126,43 +110,61 @@ class Knowbase extends CommonGLPI
         $ki = new KnowbaseItem();
         $ki->searchForm($_GET);
 
-        if (!isset($_GET['contains']) || empty($_GET['contains'])) {
-            echo "<div><table class='mx-auto' width='950px'><tr class='noHover'><td class='center top'>";
+        if (empty($_GET['contains'])) {
+            echo '<div class="d-flex flex-wrap mt-3">';
             KnowbaseItem::showRecentPopular("recent");
-            echo "</td><td class='center top'>";
             KnowbaseItem::showRecentPopular("lastupdate");
-            echo "</td><td class='center top'>";
             KnowbaseItem::showRecentPopular("popular");
-            echo "</td></tr>";
-            echo "</table></div>";
+            echo '</div>';
         } else {
             KnowbaseItem::showList($_GET, 'search');
         }
     }
 
-
     /**
      * Show the knowbase browse view
+     *
+     * @deprecated 11.0.0
      **/
     public static function showBrowseView()
     {
+        Toolbox::deprecated();
+
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $rand        = mt_rand();
         $ajax_url    = $CFG_GLPI["root_doc"] . "/ajax/knowbase.php";
-        $loading_txt = addslashes(__('Loading...'));
-        $start       = isset($_REQUEST['start'])
-                        ? $_REQUEST['start']
-                        : 0;
+        $loading_txt = __s('Loading...');
+        $start       = (int)($_REQUEST['start'] ?? 0);
+        $cat_id      = (int)($_GET["knowbaseitemcategories_id"] ?? $_SESSION['kb_cat_id'] ?? 0);
 
         $category_list = json_encode(self::getTreeCategoryList());
-        $no_cat_found  = __("No category found");
+        $no_cat_found  = __s("No category found");
 
         $JS = <<<JAVASCRIPT
          $(function() {
+            var loadingindicator  = $("<div class='loadingindicator'>$loading_txt</div>");
+            $('#items_list$rand').html(loadingindicator); // loadingindicator on doc ready
+            var loadNode = function(cat_id) {
+               $('#items_list$rand').html(loadingindicator);
+               $('#items_list$rand').load('$ajax_url', {
+                  'action': 'getItemslist',
+                  'cat_id': cat_id,
+                  'start': $start
+               });
+            };
+
             $('#tree_category$rand').fancytree({
                // load plugins
-               extensions: ['filter', 'glyph'],
+               extensions: ['filter', 'glyph', 'persist'],
+
+               persist: {
+                  cookiePrefix: 'fancytree-kb-',
+                  expandLazy: true,
+                  overrideSource: true,
+                  store: "auto"
+               },
 
                // Scroll node into visible area, when focused by keyboard
                autoScroll: true,
@@ -193,17 +195,8 @@ class Knowbase extends CommonGLPI
 
             });
 
-            var loadingindicator  = $("<div class='loadingindicator'>$loading_txt</div>");
-            $('#items_list$rand').html(loadingindicator); // loadingindicator on doc ready
-            var loadNode = function(cat_id) {
-               $('#items_list$rand').html(loadingindicator);
-               $('#items_list$rand').load('$ajax_url', {
-                  'action': 'getItemslist',
-                  'cat_id': cat_id,
-                  'start': $start
-               });
-            };
-            loadNode(0);
+            loadNode($cat_id);
+            $.ui.fancytree.getTree("#tree_category$rand").activateKey($cat_id);
 
             $(document).on('keyup', '#browser_tree_search$rand', function() {
                var search_text = $(this).val();
@@ -227,10 +220,14 @@ JAVASCRIPT;
      * @since 9.4
      *
      * @return array
+     *
+     * @deprecated 11.0.0
      */
     public static function getTreeCategoryList()
     {
+        Toolbox::deprecated();
 
+        /** @var \DBmysql $DB */
         global $DB;
 
         $cat_table = KnowbaseItemCategory::getTable();
@@ -279,7 +276,7 @@ JAVASCRIPT;
         $inst = new KnowbaseItemCategory();
         $categories = [];
         foreach ($cat_iterator as $category) {
-            if (DropdownTranslation::canBeTranslated($inst)) {
+            if ($inst->maybeTranslated()) {
                 $tname = DropdownTranslation::getTranslatedValue(
                     $category['id'],
                     $inst->getType()
@@ -335,7 +332,7 @@ JAVASCRIPT;
         )->current();
         $categories[] = [
             'id'          => 0,
-            'name'        => __('Root category'),
+            'name'        => __s('Root category'),
             'items_count' => $root_items_count['cpt'],
         ];
 
@@ -353,7 +350,7 @@ JAVASCRIPT;
             ];
 
             if ($category['items_count'] > 0) {
-                $node['title'] .= ' <span class="badge bg-azure-lt" title="' . __('This category contains articles') . '">'
+                $node['title'] .= ' <span class="badge bg-azure-lt" title="' . __s('This category contains articles') . '">'
                 . $category['items_count']
                 . '</span>';
             }
@@ -385,9 +382,12 @@ JAVASCRIPT;
 
     /**
      * Show the knowbase Manage view
+     *
+     * @deprecated 11.0.0
      **/
     public static function showManageView()
     {
+        Toolbox::deprecated();
 
         if (isset($_GET["unpublished"])) {
             $_SESSION['kbunpublished'] = $_GET["unpublished"];

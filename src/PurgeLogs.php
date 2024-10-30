@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -32,6 +32,9 @@
  *
  * ---------------------------------------------------------------------
  */
+
+use Glpi\DBAL\QueryExpression;
+use Glpi\DBAL\QueryFunction;
 
 class PurgeLogs extends CommonDBTM
 {
@@ -80,7 +83,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeSoftware()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $month = self::getDateModRestriction($CFG_GLPI['purge_item_software_install']);
         if ($month) {
@@ -135,7 +142,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeInfocom()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $month = self::getDateModRestriction($CFG_GLPI['purge_infocom_creation']);
         if ($month) {
@@ -166,7 +177,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeUserinfos()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $month = self::getDateModRestriction($CFG_GLPI['purge_profile_user']);
         if ($month) {
@@ -235,7 +250,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeDevices()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $actions = [
             Log::HISTORY_ADD_DEVICE          => "adddevice",
@@ -265,7 +284,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeRelations()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $actions = [
             Log::HISTORY_ADD_RELATION     => "addrelation",
@@ -293,7 +316,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeItems()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $actions = [
             Log::HISTORY_CREATE_ITEM      => "createitem",
@@ -324,7 +351,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeRefusedLogs()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $month = self::getDateModRestriction($CFG_GLPI['purge_refusedequipment']);
         if ($month) {
@@ -349,7 +380,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeOthers()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $actions = [
             16 => 'comments',
@@ -376,7 +411,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgePlugins()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $month = self::getDateModRestriction($CFG_GLPI['purge_plugins']);
         if ($month) {
@@ -397,7 +436,11 @@ class PurgeLogs extends CommonDBTM
      */
     public static function purgeAll()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         $month = self::getDateModRestriction($CFG_GLPI['purge_all']);
         if ($month) {
@@ -418,12 +461,14 @@ class PurgeLogs extends CommonDBTM
     public static function getDateModRestriction($month)
     {
         if ($month > 0) {
-            return ['date_mod' => ['<=', new QueryExpression("DATE_ADD(NOW(), INTERVAL -$month MONTH)")]];
+            return ['date_mod' => ['<=', QueryFunction::dateSub(QueryFunction::now(), $month, 'MONTH')]];
         } else if ($month == Config::DELETE_ALL) {
             return [1 => 1];
         } else if ($month == Config::KEEP_ALL) {
             return false;
         }
+
+        return false; // Unknown value, keep all by default
     }
 
     /**

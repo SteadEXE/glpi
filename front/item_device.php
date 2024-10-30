@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,7 +33,10 @@
  * ---------------------------------------------------------------------
  */
 
-include('../inc/includes.php');
+use Glpi\Exception\Http\AccessDeniedHttpException;
+
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
 
 if (!isset($_GET['itemtype']) || !class_exists($_GET['itemtype'])) {
     throw new \RuntimeException(
@@ -41,10 +44,11 @@ if (!isset($_GET['itemtype']) || !class_exists($_GET['itemtype'])) {
     );
 }
 
-$itemDevice = new $_GET['itemtype']();
+/** @var class-string $_GET['itemtype'] */
+$itemDevice = getItemForItemtype($_GET['itemtype']);
 if (!$itemDevice->canView()) {
     Session::redirectIfNotLoggedIn();
-    Html::displayRightError();
+    throw new AccessDeniedHttpException();
 }
 
 if (in_array($itemDevice->getType(), $CFG_GLPI['devices_in_menu'])) {

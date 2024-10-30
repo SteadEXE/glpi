@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,13 +33,11 @@
  * ---------------------------------------------------------------------
  */
 
-/**
- * @since 9.2
- */
-
+use Glpi\Application\View\TemplateRenderer;
 
 /**
  * SLM Class
+ * @since 9.2
  **/
 class SLM extends CommonDBTM
 {
@@ -50,31 +48,23 @@ class SLM extends CommonDBTM
 
     public static $rightname                   = 'slm';
 
-    const TTR = 0; // Time to resolve
-    const TTO = 1; // Time to own
+    public const TTR = 0; // Time to resolve
+    public const TTO = 1; // Time to own
+
+    public const RIGHT_ASSIGN = 256;
 
     public static function getTypeName($nb = 0)
     {
         return _n('Service level', 'Service levels', $nb);
     }
 
-    /**
-     * Force calendar of the SLM if value -1: calendar of the entity
-     *
-     * @param integer $calendars_id calendars_id of the ticket
-     **/
-    public function setTicketCalendar($calendars_id)
+    public static function getSectorizedDetails(): array
     {
-        Toolbox::deprecated();
-
-        if ($this->fields['use_ticket_calendar']) {
-            $this->fields['calendars_id'] = $calendars_id;
-        }
+        return ['config', self::class];
     }
 
     public function defineTabs($options = [])
     {
-
         $ong = [];
         $this->addDefaultFormTab($ong);
         $this->addImpactTab($ong, $options);
@@ -85,14 +75,12 @@ class SLM extends CommonDBTM
         return $ong;
     }
 
-
     public function prepareInputForAdd($input)
     {
         $input = $this->handleCalendarStrategy($input);
 
         return parent::prepareInputForAdd($input);
     }
-
 
     public function prepareInputForUpdate($input)
     {
@@ -112,7 +100,7 @@ class SLM extends CommonDBTM
     private function handleCalendarStrategy(array $input): array
     {
         if (array_key_exists('calendars_id', $input)) {
-            if ($input['calendars_id'] == -1) {
+            if ((int) $input['calendars_id'] === -1) {
                 $input['calendars_id'] = 0;
                 $input['use_ticket_calendar'] = 1;
             } else {
@@ -123,11 +111,12 @@ class SLM extends CommonDBTM
         return $input;
     }
 
-    public function post_updateItem($history = 1)
+    public function post_updateItem($history = true)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
-        if (in_array('use_ticket_calendar', $this->updates) || in_array('calendars_id', $this->updates)) {
+        if (in_array('use_ticket_calendar', $this->updates, true) || in_array('calendars_id', $this->updates, true)) {
             // Propagate calendar settings to children
             foreach ([OLA::class, SLA::class] as $child_class) {
                 $child_iterator = $DB->request(
@@ -135,7 +124,7 @@ class SLM extends CommonDBTM
                         'SELECT' => 'id',
                         'FROM'   => $child_class::getTable(),
                         'WHERE'  => [
-                            $this->getForeignKeyField() => $this->getID()
+                            static::getForeignKeyField() => $this->getID()
                         ]
                     ]
                 );
@@ -157,7 +146,6 @@ class SLM extends CommonDBTM
 
     public function cleanDBonPurge()
     {
-
         $this->deleteChildrenAndRelationsFromDb(
             [
                 SLA::class,
@@ -167,46 +155,31 @@ class SLM extends CommonDBTM
     }
 
     /**
-     * Print the slm form
-     *
-     * @param integer $ID ID of the item
-     * @param array   $options of possible options:
-     *     - target filename : where to go when done.
-     *     - withtemplate boolean : template or basic item
-     *
-     * @return boolean item found
+     * Print the SLM form
+     * {@inheritdoc}
      **/
     public function showForm($ID, array $options = [])
     {
-
-        $rowspan = 2;
-
-        $this->initForm($ID, $options);
-        $this->showFormHeader($options);
-        echo "<tr class='tab_bg_1'>";
-        echo "<td>" . __('Name') . "</td>";
-        echo "<td>";
-        echo Html::input('name', ['value' => $this->fields['name']]);
-        echo "<td rowspan='" . $rowspan . "'>" . __('Comments') . "</td>";
-        echo "<td rowspan='" . $rowspan . "'>
-            <textarea class='form-control' name='comment' >" . $this->fields["comment"] . "</textarea>";
-        echo "</td></tr>";
-
-        echo "<tr class='tab_bg_1'><td>" . _n('Calendar', 'Calendars', 1) . "</td>";
-        echo "<td>";
-
-        Calendar::dropdown([
-            'value'      => $this->fields['use_ticket_calendar'] ? -1 : $this->fields['calendars_id'],
-            'emptylabel' => __('24/7'),
-            'toadd'      => ['-1' => __('Calendar of the ticket')]
-        ]);
-        echo "</td></tr>";
-
-        $this->showFormButtons($options);
-
+        $twig_params = [
+            'item' => $this,
+            'params' => $options,
+        ];
+        // language=Twig
+        echo TemplateRenderer::getInstance()->renderFromStringTemplate(<<<TWIG
+            {% extends 'generic_show_form.html.twig' %}
+            {% import 'components/form/fields_macros.html.twig' as fields %}
+            
+            {% block more_fields %}
+                {{ fields.dropdownField('Calendar', 'calendars_id', item.fields['use_ticket_calendar'] ? -1 : item.fields['calendars_id'], 'Calendar'|itemtype_name(1), {
+                    emptylabel: __('24/7'),
+                    toadd: {
+                        (-1): __('Calendar of the ticket')
+                    }
+                }) }}
+            {% endblock %}
+TWIG, $twig_params);
         return true;
     }
-
 
     public function rawSearchOptions()
     {
@@ -219,7 +192,7 @@ class SLM extends CommonDBTM
 
         $tab[] = [
             'id'                 => '1',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'name',
             'name'               => __('Name'),
             'datatype'           => 'itemlink',
@@ -228,7 +201,7 @@ class SLM extends CommonDBTM
 
         $tab[] = [
             'id'                 => '2',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'id',
             'name'               => __('ID'),
             'massiveaction'      => false,
@@ -245,7 +218,7 @@ class SLM extends CommonDBTM
 
         $tab[] = [
             'id'                 => '16',
-            'table'              => $this->getTable(),
+            'table'              => static::getTable(),
             'field'              => 'comment',
             'name'               => __('Comments'),
             'datatype'           => 'text'
@@ -254,10 +227,8 @@ class SLM extends CommonDBTM
         return $tab;
     }
 
-
     public static function getMenuContent()
     {
-
         $menu = [];
         if (static::canView()) {
             $menu['title']           = self::getTypeName(2);
@@ -268,21 +239,21 @@ class SLM extends CommonDBTM
                 $menu['links']['add'] = SLM::getFormURL(false);
             }
 
-            $menu['options']['sla']['title']           = SLA::getTypeName(1);
-            $menu['options']['sla']['page']            = SLA::getSearchURL(false);
-            $menu['options']['sla']['links']['search'] = SLA::getSearchURL(false);
+            $menu['options'][SLA::class]['title']           = SLA::getTypeName(1);
+            $menu['options'][SLA::class]['page']            = SLA::getSearchURL(false);
+            $menu['options'][SLA::class]['links']['search'] = SLA::getSearchURL(false);
 
-            $menu['options']['ola']['title']           = OLA::getTypeName(1);
-            $menu['options']['ola']['page']            = OLA::getSearchURL(false);
-            $menu['options']['ola']['links']['search'] = OLA::getSearchURL(false);
+            $menu['options'][OLA::class]['title']           = OLA::getTypeName(1);
+            $menu['options'][OLA::class]['page']            = OLA::getSearchURL(false);
+            $menu['options'][OLA::class]['links']['search'] = OLA::getSearchURL(false);
 
-            $menu['options']['slalevel']['title']           = SlaLevel::getTypeName(Session::getPluralNumber());
-            $menu['options']['slalevel']['page']            = SlaLevel::getSearchURL(false);
-            $menu['options']['slalevel']['links']['search'] = SlaLevel::getSearchURL(false);
+            $menu['options'][SlaLevel::class]['title']           = SlaLevel::getTypeName(Session::getPluralNumber());
+            $menu['options'][SlaLevel::class]['page']            = SlaLevel::getSearchURL(false);
+            $menu['options'][SlaLevel::class]['links']['search'] = SlaLevel::getSearchURL(false);
 
-            $menu['options']['olalevel']['title']           = OlaLevel::getTypeName(Session::getPluralNumber());
-            $menu['options']['olalevel']['page']            = OlaLevel::getSearchURL(false);
-            $menu['options']['olalevel']['links']['search'] = OlaLevel::getSearchURL(false);
+            $menu['options'][OlaLevel::class]['title']           = OlaLevel::getTypeName(Session::getPluralNumber());
+            $menu['options'][OlaLevel::class]['page']            = OlaLevel::getSearchURL(false);
+            $menu['options'][OlaLevel::class]['links']['search'] = OlaLevel::getSearchURL(false);
         }
         if (count($menu)) {
             return $menu;
@@ -290,9 +261,19 @@ class SLM extends CommonDBTM
         return false;
     }
 
-
     public static function getIcon()
     {
         return "ti ti-checkup-list";
+    }
+
+    public function getRights($interface = 'central')
+    {
+        $values = parent::getRights();
+        $values[self::RIGHT_ASSIGN]  = [
+            'short' => __('Assign'),
+            'long'  => __('Search result user display'),
+        ];
+
+        return $values;
     }
 }

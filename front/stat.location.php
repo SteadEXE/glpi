@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,13 +33,15 @@
  * ---------------------------------------------------------------------
  */
 
+use Glpi\Application\View\TemplateRenderer;
 use Glpi\Stat\Data\Location\StatDataClosed;
 use Glpi\Stat\Data\Location\StatDataLate;
 use Glpi\Stat\Data\Location\StatDataOpened;
 use Glpi\Stat\Data\Location\StatDataOpenSatisfaction;
 use Glpi\Stat\Data\Location\StatDataSolved;
 
-include('../inc/includes.php');
+/** @var array $CFG_GLPI */
+global $CFG_GLPI;
 
 Html::header(__('Statistics'), '', "helpdesk", "stat");
 
@@ -48,8 +50,16 @@ Session::checkRight("statistic", READ);
 
 if (empty($_GET["showgraph"])) {
     $_GET["showgraph"] = 0;
+} else {
+    $_GET["showgraph"] = (int)$_GET["showgraph"];
 }
 
+//sanitize dates
+foreach (['date1', 'date2'] as $key) {
+    if (array_key_exists($key, $_GET) && preg_match('/\d{4}-\d{2}-\d{2}/', (string)$_GET[$key]) !== 1) {
+        unset($_GET[$key]);
+    }
+}
 if (empty($_GET["date1"]) && empty($_GET["date2"])) {
     $year          = date("Y") - 1;
     $_GET["date1"] = date("Y-m-d", mktime(1, 0, 0, date("m"), date("d"), $year));
@@ -68,61 +78,37 @@ if (
 
 if (!isset($_GET["start"])) {
     $_GET["start"] = 0;
-}
-// Why this test ?? For me it's doing nothing
-if (isset($_GET["dropdown"])) {
-    $_GET["dropdown"] = $_GET["dropdown"];
+} else {
+    $_GET["start"] = (int)$_GET["start"];
 }
 
 if (empty($_GET["dropdown"])) {
     $_GET["dropdown"] = "ComputerType";
+} else {
+    $_GET["dropdown"] = (string)$_GET["dropdown"];
 }
 
 if (!isset($_GET['itemtype'])) {
     $_GET['itemtype'] = 'Ticket';
+} else {
+    $_GET['itemtype'] = (string)$_GET["itemtype"];
 }
 
 $stat = new Stat();
 Stat::title();
 
-echo "<form method='get' name='form' action='stat.location.php'>";
-// keep it first param
-echo "<input type='hidden' name='itemtype' value='" . $_GET['itemtype'] . "'>";
-
-echo "<table class='tab_cadre_fixe' ><tr class='tab_bg_2'><td rowspan='2' width='30%'>";
-$values = [_n('Dropdown', 'Dropdowns', Session::getPluralNumber()) => ['ComputerType'    => _n('Type', 'Types', 1),
-    'ComputerModel'   => _n('Model', 'Models', 1),
-    'OperatingSystem' => OperatingSystem::getTypeName(1),
-    'Location'        => Location::getTypeName(1)
-],
-];
-$devices = Dropdown::getDeviceItemTypes();
-foreach ($devices as $label => $dp) {
-    foreach ($dp as $i => $name) {
-        $values[$label][$i] = $name;
-    }
-}
-
-Dropdown::showFromArray('dropdown', $values, ['value' => $_GET["dropdown"]]);
-
-echo "</td>";
-
-echo "<td class='right'>" . __('Start date') . "</td><td>";
-Html::showDateField("date1", ['value' => $_GET["date1"]]);
-echo "</td>";
-echo "<td class='right'>" . __('Show graphics') . "</td>";
-echo "<td rowspan='2' class='center'>";
-echo "<input type='submit' class='btn btn-primary' name='submit' value='" . __s('Display report') . "'></td></tr>";
-
-echo "<tr class='tab_bg_2'><td class='right'>" . __('End date') . "</td><td>";
-Html::showDateField("date2", ['value' => $_GET["date2"]]);
-echo "</td><td class='center'>";
-Dropdown::showYesNo('showgraph', $_GET['showgraph']);
-echo "</td>";
-echo "</tr>";
-echo "</table>";
-// form using GET method : CRSF not needed
-echo "</form>";
+TemplateRenderer::getInstance()->display('pages/assistance/stats/form.html.twig', [
+    'target'    => 'stat.location.php',
+    'itemtype'  => $_GET['itemtype'],
+    'type_params' => [
+        'field' => 'dropdown',
+        'value' => $_GET["dropdown"],
+        'elements' => Stat::getItemCharacteristicStatFields(),
+    ],
+    'date1'     => $_GET["date1"],
+    'date2'     => $_GET["date2"],
+    'showgraph' => $_GET['showgraph'] ?? 0,
+]);
 
 if (
     empty($_GET["dropdown"])
@@ -130,7 +116,7 @@ if (
 ) {
    // Do nothing
     Html::footer();
-    exit();
+    return;
 }
 
 
@@ -162,8 +148,15 @@ Html::printPager(
     $_GET['start'],
     count($val),
     $CFG_GLPI['root_doc'] . '/front/stat.location.php',
-    "date1=" . $_GET["date1"] . "&amp;date2=" . $_GET["date2"] .
-                     "&amp;itemtype=" . $_GET['itemtype'] . "&amp;dropdown=" . $_GET["dropdown"],
+    Toolbox::append_params(
+        [
+            'date1'    => $_GET['date1'],
+            'date2'    => $_GET['date2'],
+            'itemtype' => $_GET['itemtype'],
+            'dropdown' => $_GET['dropdown'],
+        ],
+        '&amp;'
+    ),
     'Stat',
     $params
 );

@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,7 +33,7 @@
  * ---------------------------------------------------------------------
  */
 
-include('../inc/includes.php');
+use Glpi\Event;
 
 Session::checkRight("config", UPDATE);
 $notificationajax = new NotificationAjaxSetting();
@@ -44,8 +44,13 @@ if (!empty($_POST["test_ajax_send"])) {
 } else if (!empty($_POST["update"])) {
     $config = new Config();
     $config->update($_POST);
+    Event::log(0, "system", 3, "setup", sprintf(
+        __('%1$s edited the browsers notifications configuration'),
+        $_SESSION["glpiname"] ?? __("Unknown"),
+    ));
     Html::back();
 }
 
 $menus = ["config", "notification", "config"];
-NotificationAjaxSetting::displayFullPageForItem(1, $menus);
+$config_id = Config::getConfigIDForContext('core');
+NotificationAjaxSetting::displayFullPageForItem($config_id, $menus);

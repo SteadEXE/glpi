@@ -7,7 +7,7 @@
 #
 # http://glpi-project.org
 #
-# @copyright 2015-2022 Teclib' and contributors.
+# @copyright 2015-2024 Teclib' and contributors.
 # @copyright 2003-2014 by the INDEPNET Development Team.
 # @licence   https://www.gnu.org/licenses/gpl-3.0.html
 #
@@ -44,51 +44,62 @@ then
     exit 1
 fi
 
-echo "Install dependencies"
+echo "Installing dependencies..."
 # PHP dev dependencies are usefull at this point as they are used by some build operations
 $WORKING_DIR/bin/console dependencies install --composer-options="--ignore-platform-reqs --prefer-dist --no-progress"
 
-echo "Compile locale files"
+echo "Compiling locale files..."
 $WORKING_DIR/bin/console locales:compile
 
-echo "Minify stylesheets and javascripts"
+echo "Minifying stylesheets..."
 find $WORKING_DIR/css $WORKING_DIR/lib $WORKING_DIR/public/lib \( -iname "*.css" ! -iname "*.min.css" \) \
     -exec sh -c 'echo "> {}" && '"$WORKING_DIR"'/node_modules/.bin/csso {} --output $(dirname {})/$(basename {} ".css").min.css' \;
 
-echo "Minify javascripts"
+echo "Minifying javascripts..."
 find $WORKING_DIR/js $WORKING_DIR/lib $WORKING_DIR/public/lib \( -iname "*.js" ! -iname "*.min.js" \) \
     -exec sh -c 'echo "> {}" && '"$WORKING_DIR"'/node_modules/.bin/terser {} --mangle --output $(dirname {})/$(basename {} ".js").min.js' \;
 
-echo "Compile SCSS"
+echo "Compiling SCSS..."
 $WORKING_DIR/bin/console build:compile_scss
 
-echo "Remove dev files and directories"
+echo "Removing dev files and directories..."
 # Remove PHP dev dependencies that are not anymore used
 composer update nothing --ansi --no-interaction --ignore-platform-reqs --no-dev --no-scripts --working-dir=$WORKING_DIR
 
-# Remove user generated files (i.e. cache and log from CLI commands ran during release)
-find $WORKING_DIR/files -depth -mindepth 2 ! -iname "remove.txt" -exec rm -rf {} \;
-
-# Remove hidden files and directory, except .htaccess files
-find $WORKING_DIR -depth \( -iname ".*" ! -iname ".htaccess" \) -exec rm -rf {} \;
+# Remove hidden files and directories
+find $WORKING_DIR -depth -iname ".*" -exec rm -rf {} \;
 
 # Remove useless dev files and directories
 dev_nodes=(
     "composer.json"
     "composer.lock"
-    "ISSUE_TEMPLATE.md"
+    "docker-compose.yaml"
+    "eslint.config.mjs"
+    "js/src/vue"
+    "jsconfig.json"
     "locales/glpi.pot"
+    "Makefile"
     "node_modules"
     "package.json"
     "package-lock.json"
-    "PULL_REQUEST_TEMPLATE.md"
+    "phpstan.neon"
+    "phpstan.neon.dist"
+    "phpunit"
+    "phpunit.xml.dist"
+    "stubs"
     "tests"
     "tools"
-    "vendor/bin"
-    "webpack.config.js"
+    "vendor/glpi-project/inventory_format/examples"
+    "vendor/glpi-project/inventory_format/source_files"
 )
 for node in "${dev_nodes[@]}"
 do
     rm -rf $WORKING_DIR/$node
 done
-find $WORKING_DIR/pics/ -depth -type f -iname "*.eps" -exec rm -rf {} \;
+
+echo "Generating file manifest..."
+$WORKING_DIR/bin/console build:generate_code_manifest -a crc32c
+
+echo "Removing user generated files..."
+# Remove user generated files (i.e. cache and log from CLI commands ran during release)
+find $WORKING_DIR/files -depth -mindepth 2 -exec rm -rf {} \;

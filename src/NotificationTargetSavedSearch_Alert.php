@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -37,6 +37,7 @@ class NotificationTargetSavedSearch_Alert extends NotificationTarget
 {
     public function getEvents()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $events = [];
@@ -69,11 +70,13 @@ class NotificationTargetSavedSearch_Alert extends NotificationTarget
 
     public function addDataForTemplate($event, $options = [])
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $events = $this->getEvents();
 
         $savedsearch_alert = $options['item'];
+        /** @var SavedSearch $savedsearch */
         $savedsearch = $options['savedsearch'];
 
         $this->data['##savedsearch.action##']    = $events[$event];
@@ -82,9 +85,8 @@ class NotificationTargetSavedSearch_Alert extends NotificationTarget
         $this->data['##savedsearch.id##']        = $savedsearch->getID();
         $this->data['##savedsearch.count##']     = (int)$options['data']['totalcount'];
         $this->data['##savedsearch.type##']      = $savedsearch->getField('itemtype');
-        $this->data['##savedsearch.url##']       = $CFG_GLPI['url_base'] . "/?redirect=" .
-                                                   rawurlencode($savedsearch->getSearchURL(false) .
-                                                   "?action=load&id=" . $savedsearch->getID());
+        $url = $savedsearch::getSearchURL(false) . "?action=load&id=" . $savedsearch->getID();
+        $this->data['##savedsearch.url##']       = $this->formatURL($options['additionnaloption']['usertype'], $url);
 
         $this->getTags();
         foreach ($this->tag_descriptions[NotificationTarget::TAG_LANGUAGE] as $tag => $values) {

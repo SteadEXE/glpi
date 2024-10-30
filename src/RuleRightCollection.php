@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -36,147 +36,35 @@
 /// Rule collection class for Rights management
 class RuleRightCollection extends RuleCollection
 {
-   // From RuleCollection
+    // From RuleCollection
     public $stop_on_first_match = false;
     public static $rightname           = 'rule_ldap';
-    public $orderby             = "name";
     public $menu_option         = 'right';
 
-   // Specific ones
-   /// Array containing results : entity + right
+    // Specific ones
+    /** @var array Array containing results : entity + right */
     public $rules_entity_rights = [];
-   /// Array containing results : only entity
+    /** @var array Array containing results : only entity */
     public $rules_entity        = [];
-   /// Array containing results : only right
+    /** @var array Array containing results : only right */
     public $rules_rights        = [];
-
 
     public function getTitle()
     {
         return __('Authorizations assignment rules');
     }
 
-
-    /**
-     * @see RuleCollection::cleanTestOutputCriterias()
-     */
     public function cleanTestOutputCriterias(array $output)
     {
-
         if (isset($output["_rule_process"])) {
             unset($output["_rule_process"]);
         }
         return $output;
     }
 
-
-    public function showTestResults($rule, array $output, $global_result)
-    {
-
-        $actions = $rule->getActions();
-        echo "<tr><th colspan='4'>" . __('Rule results') . "</th></tr>";
-        echo "<tr class='tab_bg_2'>";
-        echo "<td class='center' colspan='2'>" . _n('Validation', 'Validations', 1) . "</td><td colspan='2'>" .
-           "<span class='b'>" . Dropdown::getYesNo($global_result) . "</span></td>";
-
-        if (isset($output["_ldap_rules"]["rules_entities"])) {
-            echo "<tr class='tab_bg_2'>";
-            echo "<td class='center' colspan='4'>" . __('Entities assignment') . "</td>";
-            foreach ($output["_ldap_rules"]["rules_entities"] as $entities) {
-                foreach ($entities as $entity) {
-                    $this->displayActionByName("entity", $entity[0]);
-                    if (isset($entity[1])) {
-                        $this->displayActionByName("recursive", $entity[1]);
-                    }
-                }
-            }
-        }
-
-        if (isset($output["_ldap_rules"]["rules_rights"])) {
-            echo "<tr class='tab_bg_2'>";
-            echo "<td colspan='4' class='center'>" . __('Rights assignment') . "</td>";
-            foreach ($output["_ldap_rules"]["rules_rights"] as $val) {
-                $this->displayActionByName("profile", $val[0]);
-            }
-        }
-
-        if (isset($output["_ldap_rules"]["rules_entities_rights"])) {
-            echo "<tr class='tab_bg_2'>";
-            echo "<td colspan='4' class='center'>" . __('Rights and entities assignment') . "</td>";
-            foreach ($output["_ldap_rules"]["rules_entities_rights"] as $val) {
-                if (is_array($val[0])) {
-                    foreach ($val[0] as $tmp) {
-                        $this->displayActionByName("entity", $tmp);
-                    }
-                } else {
-                    $this->displayActionByName("entity", $val[0]);
-                }
-                if (isset($val[1])) {
-                    $this->displayActionByName("profile", $val[1]);
-                }
-                if (isset($val[2])) {
-                    $this->displayActionByName("is_recursive", $val[2]);
-                }
-            }
-        }
-
-        if (isset($output["_ldap_rules"])) {
-            unset($output["_ldap_rules"]);
-        }
-        foreach ($output as $criteria => $value) {
-            if (isset($actions[$criteria])) { // ignore _* fields
-                if (isset($actions[$criteria]['action_type'])) {
-                    $actiontype = $actions[$criteria]['action_type'];
-                } else {
-                    $actiontype = '';
-                }
-                echo "<tr class='tab_bg_2'>";
-                echo "<td class='center'>" . $actions[$criteria]["name"] . "</td>";
-                echo "<td class='center'>" . $rule->getActionValue($criteria, $actiontype, $value);
-                echo "</td></tr>\n";
-            }
-        }
-        echo "</tr>";
-    }
-
-
-    /**
-     * Display action using its name
-     *
-     * @param $name   action name
-     * @param $value  default value
-     **/
-    public function displayActionByName($name, $value)
-    {
-
-        echo "<tr class='tab_bg_2'>";
-        switch ($name) {
-            case "entity":
-                echo "<td class='center'>" . Entity::getTypeName(1) . " </td>\n";
-                echo "<td class='center'>" . Dropdown::getDropdownName("glpi_entities", $value) . "</td>";
-                break;
-
-            case "profile":
-                echo "<td class='center'>" . _n('Profile', 'Profiles', Session::getPluralNumber()) . " </td>\n";
-                echo "<td class='center'>" . Dropdown::getDropdownName("glpi_profiles", $value) . "</td>";
-                break;
-
-            case "is_recursive":
-                echo "<td class='center'>" . __('Recursive') . " </td>\n";
-                echo "<td class='center'>" . Dropdown::getYesNo($value) . "</td>";
-                break;
-        }
-        echo "</tr>";
-    }
-
-
-    /**
-     * Get all the fields needed to perform the rule
-     *
-     * @see RuleCollection::getFieldsToLookFor()
-     **/
     public function getFieldsToLookFor()
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $params = [];
@@ -210,50 +98,56 @@ class RuleRightCollection extends RuleCollection
         return $params;
     }
 
-
-    /**
-     * Get the attributes needed for processing the rules
-     *
-     * @see RuleCollection::prepareInputDataForProcess()
-     *
-     * @param $input  input datas
-     * @param $params extra parameters given
-     *
-     * @return an array of attributes
-     **/
     public function prepareInputDataForProcess($input, $params)
     {
         $groups = [];
-        if (isset($input) && is_array($input)) {
+        if (is_array($input)) {
             $groups = $input;
         }
 
-       //common parameters
+        // Some of the rule criteria is uppercase, but most other rule criterias are lowercase only
+        $params_lower = array_change_key_case($params, CASE_LOWER);
+
+        //common parameters
         $rule_parameters = [
-            'TYPE'       => $params["type"] ?? "",
-            'LOGIN'      => $params["login"] ?? "",
-            'MAIL_EMAIL' => $params["email"] ?? $params["mail_email"] ?? "",
+            'TYPE'       => $params_lower["type"] ?? "",
+            'LOGIN'      => $params_lower["login"] ?? "",
+            'MAIL_EMAIL' => $params_lower["email"] ?? $params_lower["mail_email"] ?? "",
             '_groups_id' => $groups
         ];
 
        //IMAP/POP login method
-        if ($params["type"] == Auth::MAIL) {
-            $rule_parameters["MAIL_SERVER"] = $params["mail_server"] ?? "";
+        if ($params_lower["type"] == Auth::MAIL) {
+            $rule_parameters["MAIL_SERVER"] = $params_lower["mail_server"] ?? "";
         }
 
        //LDAP type method
-        if ($params["type"] == Auth::LDAP) {
+        if ($params_lower["type"] == Auth::LDAP) {
            //Get all the field to retrieve to be able to process rule matching
             $rule_fields = $this->getFieldsToLookFor();
 
-           //Get all the datas we need from ldap to process the rules
-            $sz         = @ldap_read(
-                $params["connection"],
-                $params["userdn"],
+           //Get all the data we need from ldap to process the rules
+            $sz = @ldap_read(
+                $params_lower["connection"],
+                $params_lower["userdn"],
                 "objectClass=*",
                 $rule_fields
             );
-            $rule_input = AuthLDAP::get_entries_clean($params["connection"], $sz);
+            if ($sz === false) {
+                // 32 = LDAP_NO_SUCH_OBJECT => This error can be silented as it just means that search produces no result.
+                if (ldap_errno($params_lower["connection"]) !== 32) {
+                    trigger_error(
+                        AuthLDAP::buildError(
+                            $params_lower["connection"],
+                            sprintf('Unable to get LDAP user having DN `%s` with filter `%s`', $params_lower["userdn"], 'objectClass=*')
+                        ),
+                        E_USER_WARNING
+                    );
+                }
+                return $rule_parameters;
+            }
+
+            $rule_input = AuthLDAP::get_entries_clean($params_lower["connection"], $sz);
 
             if (count($rule_input)) {
                 $rule_input = $rule_input[0];
@@ -262,7 +156,7 @@ class RuleRightCollection extends RuleCollection
                 foreach ($fields as $field) {
                     switch (Toolbox::strtoupper($field)) {
                         case "LDAP_SERVER":
-                            $rule_parameters["LDAP_SERVER"] = $params["ldap_server"];
+                            $rule_parameters["LDAP_SERVER"] = $params_lower["ldap_server"];
                             break;
 
                         default: // ldap criteria (added by user)
@@ -289,13 +183,11 @@ class RuleRightCollection extends RuleCollection
         return $rule_parameters;
     }
 
-
     /**
      * Get the list of fields to be retreived to process rules
      **/
     public function getFieldsForQuery()
     {
-
         $rule      = new RuleRight();
         $criterias = $rule->getCriterias();
 

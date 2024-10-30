@@ -1,22 +1,12 @@
 #!/bin/bash
 set -e -u -x -o pipefail
 
-# Stable versions contains only 3 groups of digits separated by a dot,
-# i.e. no "dev", "alpha", "beta, "rc", ... keyword.
-STABLE_REGEX="^[0-9]+\.[0-9]+\.[0-9]+$"
-
-# Validate composer config
-composer validate --strict
-if [[ "$PHP_VERSION" =~ $STABLE_REGEX ]]; then
-  composer check-platform-reqs;
-fi
-
 # Install dependencies
-COMPOSER_ADD_OPTS=""
-if ! [[ "$PHP_VERSION" =~ $STABLE_REGEX ]]; then
-  COMPOSER_ADD_OPTS="--ignore-platform-reqs";
-fi
-bin/console dependencies install --composer-options="$COMPOSER_ADD_OPTS --prefer-dist --no-progress"
+# Ignore the PHP version requirement as some dependencies are explicitely marking themselves as incompatible
+# with future PHP versions they were not able to test when they release their own versions
+# (see https://github.com/laminas/laminas-diactoros/issues/117#issuecomment-1267306142).
+# The `+` suffix on `php+` indicates that we ignore the upper bound of our dependencies, see https://getcomposer.org/doc/03-cli.md#install-i
+bin/console dependencies install --composer-options="--ignore-platform-req=php+ --prefer-dist --no-progress"
 
 # Compile translation files
 php bin/console locales:compile

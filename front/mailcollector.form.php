@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -35,8 +35,6 @@
 
 use Glpi\Event;
 
-include('../inc/includes.php');
-
 Session::checkRight("config", READ);
 
 if (!isset($_GET["id"])) {
@@ -50,7 +48,7 @@ if (isset($_POST["add"])) {
 
     if (array_key_exists('passwd', $_POST)) {
        // Password must not be altered, it will be encrypted and never displayed, so sanitize is not necessary.
-        $_POST['passwd'] = $_UPOST['passwd'];
+        $_POST['passwd'] = $_POST['passwd'];
     }
 
     if ($newID = $mailgate->add($_POST)) {
@@ -84,7 +82,7 @@ if (isset($_POST["add"])) {
 
     if (array_key_exists('passwd', $_POST)) {
        // Password must not be altered, it will be encrypted and never displayed, so sanitize is not necessary.
-        $_POST['passwd'] = $_UPOST['passwd'];
+        $_POST['passwd'] = $_POST['passwd'];
     }
 
     $mailgate->update($_POST);

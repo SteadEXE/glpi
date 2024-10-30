@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2022 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -42,12 +42,14 @@ class ProblemTemplate extends ITILTemplate
 {
     use Glpi\Features\Clonable;
 
-    public $second_level_menu         = "problem";
-    public $third_level_menu          = "ProblemTemplate";
-
     public static function getTypeName($nb = 0)
     {
         return _n('Problem template', 'Problem templates', $nb);
+    }
+
+    public static function getSectorizedDetails(): array
+    {
+        return ['helpdesk', Problem::class, self::class];
     }
 
     public function getCloneRelations(): array
@@ -56,6 +58,17 @@ class ProblemTemplate extends ITILTemplate
             ProblemTemplateHiddenField::class,
             ProblemTemplateMandatoryField::class,
             ProblemTemplatePredefinedField::class,
+            ProblemTemplateReadonlyField::class,
+        ];
+    }
+
+    public static function getExtraAllowedFields($withtypeandcategory = false, $withitemtype = false)
+    {
+        $problem = new Problem();
+        return [
+            $problem->getSearchOptionIDByField('field', 'impactcontent', 'glpi_problems')  => 'impactcontent',
+            $problem->getSearchOptionIDByField('field', 'causecontent', 'glpi_problems')   => 'causecontent',
+            $problem->getSearchOptionIDByField('field', 'symptomcontent', 'glpi_problems') => 'symptomcontent',
         ];
     }
 }
